@@ -450,7 +450,7 @@ const aiPrompt=()=>`이 스크린샷/사진을 보고 개인 스크랩 앱에 �
 기존 분류 목록: ${JSON.stringify(st.cats.filter(c=>c!=='미분류'))}
 규칙:
 - cat: 기존 분류 중 가장 맞는 것 하나. 정말 맞는 게 없을 때만 새 분류 이름(2~6자, 「OO·OO」 형식 가능)을 만들고 isNew:true.
-- memos: 메모 후보 3개. 각 45자 이내 한국어. 사진 핵심 내용 + (있으면) "→ 쓸 곳". 1번이 가장 좋은 것. 과장·추측 금지, 보이는 내용 위주.
+- memos: 메모 후보 3개. 각 50자 이내 한국어. 사진 핵심 내용 + (있으면) "→ 쓸 곳". 스레드·유튜브 등 출처가 보이면 메모 안에 짧게 넣기(예: "@아이디 스레드: …"). 1번이 가장 좋은 것. 과장·추측 금지, 보이는 내용 위주.
 - src: 출처(예: "스레드 @아이디", "유튜브 채널명", "인스타 @아이디"). 모르면 "".
 ${learn.length?`사용자가 예전 추천을 이렇게 고쳤습니다. 같은 실수를 반복하지 말고, 고친 쪽의 분류 기준·메모 말투를 따르세요:
 ${learn.slice(0,15).map(l=>`- 추천 [${l.aiCat}] "${l.aiMemo}" → 사용자 [${l.cat}] "${l.memo}"${l.src?' ('+l.src+')':''}`).join('\n')}
@@ -511,13 +511,13 @@ function openView(id){
 function tryClose(x){
   if(!dirty)return closeView();
   const d=document.createElement('div');d.className='ov';d.style.zIndex=60;d.style.background='rgba(0,0,0,.5)';
-  d.innerHTML=`<div class="pane" style="max-width:340px;gap:10px"><b style="font-size:15px">저장 안 된 내용이 있어요</b><div class="acts" style="flex-direction:column"><button class="btn pri" data-k="s">저장하고 닫기</button><button class="btn del" data-k="d">저장 안 하고 닫기</button><button class="btn" data-k="c">계속 쓰기</button></div></div>`;
+  d.innerHTML=`<div class="pane" style="max-width:340px;gap:10px"><b style="font-size:15px">저장 안 된 내용이 있어요</b><small style="color:var(--mute)">바깥을 누르면 계속 쓰기</small><div class="acts" style="flex-direction:column"><button class="btn pri" data-k="s">저장하고 닫기</button><button class="btn del" data-k="d">저장 안 하고 닫기</button></div></div>`;
   document.body.appendChild(d);
   d.onclick=async e=>{const k=e.target.dataset&&e.target.dataset.k;if(!k&&e.target!==d)return;d.remove();
     if(k==='s'){await flush(x);dirty=false;toast('저장됨');closeView()}else if(k==='d'){pend={};dirty=false;closeView()}};
 }
 function closeView(){fillOn=false;document.querySelectorAll('.solo').forEach(e=>e.remove());st.open=null;$('#ovRoot').innerHTML='';try{speechSynthesis.cancel()}catch(e){}render()}
-let dirty=false,pend={},flushT=null;
+let aiOpen=false,dirty=false,pend={},flushT=null;
 async function flush(x){clearTimeout(flushT);const f=pend;pend={};if(!Object.keys(f).length){return true}try{await save(x,f);return true}catch(e){return false}}
 function markSv(t){document.querySelectorAll('.sv').forEach(el=>{el.textContent=t==='dirty'?'● 저장 안 됨':t==='ok'?'✓ 저장됨':t==='busy'?'저장 중…':'';el.className='sv '+(t||'')})}
 function drawView(){
@@ -525,9 +525,10 @@ function drawView(){
   let i=viewList.findIndex(v=>v.id===x.id);if(i<0){viewList=[x];i=0}
   const n=seqOf(x),c=x.cat||'미분류',busy=st.ai[x.id]==='busy',ai=x.ai;
   const aiBox=busy?`<div class="ai"><div class="t"><span><span class="spin"></span> Claude가 사진을 보고 있어요…</span></div></div>`
+    :ai&&x.memo&&!aiOpen?`<button class="btn" id="aShow" style="align-self:flex-start;height:28px;font-size:12px">✨ 추천 다시 보기</button>`
     :ai?`<div class="ai"><div class="t"><span>✨ Claude 추천 · ${esc(ai.cat)}${ai.isNew?' (새 분류)':''}</span><button class="btn" id="aRe" style="height:28px;font-size:12px">다시</button></div>
       <div class="ms">${ai.memos.map((m,k)=>`<button data-am="${k}" class="${x.memo===m?'on':''}">${x.memo===m?'✓ ':''}${esc(m)}</button>`).join('')}</div>
-      ${x.cat!==ai.cat||(!x.src&&ai.src)?`<button class="btn" id="aCat" style="align-self:flex-start;height:28px;font-size:12px">${x.cat!==ai.cat?`분류를 「${esc(ai.cat)}」로`:''}${!x.src&&ai.src?(x.cat!==ai.cat?' · ':'')+'출처 넣기':''}</button>`:''}</div>`
+      ${x.cat!==ai.cat?`<button class="btn" id="aCat" style="align-self:flex-start;height:28px;font-size:12px">분류를 「${esc(ai.cat)}」로${ai.isNew?' (새로 추가)':''}</button>`:''}</div>`
     :`<button class="btn" id="aRe" style="align-self:flex-start">✨ Claude 추천 받기</button>`;
   $('#ovRoot').innerHTML=`<div class="ov" id="ov">
    <span class="pos">${fillOn?'✎ 채우기 · ':''}${lbl(x.date)} ${CIRC[n]||''} · ${i+1}/${viewList.length}</span>
@@ -538,14 +539,14 @@ function drawView(){
     <div class="pane">
      <div class="acts" style="align-items:center"><span class="sq">${CIRC[n]||''}</span>
       <select id="vCat" style="height:36px;border:1px solid var(--line);border-radius:8px;background:${catColor(c)}1f;color:${catColor(c)};font:inherit;font-weight:600;max-width:42%">
-       ${[...new Set([...st.cats,c])].map(k=>`<option ${k===c?'selected':''}>${esc(k)}</option>`).join('')}</select>
+       ${[...new Set([...st.cats,c])].map(k=>`<option value="${esc(k)}" ${k===c?'selected':''}>${esc(k)}</option>`).join('')}<option value="__add">＋ 새 분류 추가</option><option value="__edit">✎ 분류 목록 편집</option></select>
       <span style="flex:1"></span><span class="lb"><span class="sv"></span></span>
-      <button class="btn pri" data-save>저장</button></div>
-     <input type="text" id="vSrc" value="${esc(('src' in pend?pend.src:x.src)||'')}" placeholder="출처 (예: 스레드 @id)">
+      <button class="btn" data-close>닫기</button></div>
+     <div id="catAdd" hidden><div class="hint" style="text-align:left;margin:0 0 4px">지금 있는 분류: ${st.cats.map(esc).join(' · ')}</div><div class="acts"><input type="text" id="catNew" placeholder="새 분류 이름" style="flex:1"><button class="btn pri" id="catOk">추가</button><button class="btn" id="catX">취소</button></div></div>
      ${aiBox}
      <div class="lb">✨ 추천 메모 <small style="font-weight:400">(위에서 고르거나 고쳐 쓰기)</small></div>
      <textarea id="vMemo" placeholder="Claude 추천 중 고른 메모">${esc(('memo' in pend?pend.memo:x.memo)||'')}</textarea>
-     <div class="lb">✎ 나의 메모 <small style="font-weight:400">(덧붙일 생각)</small><button class="btn" id="vMic" style="margin-left:auto;height:30px;font-size:13px">${mic?'■ 끝':'🎤 말로'}</button></div>
+     <div class="lb">✎ 나의 메모 <small style="font-weight:400">(덧붙일 생각)</small></div>
      <textarea id="vMy" placeholder="내 생각·쓸 곳 덧붙이기">${esc(('my' in pend?pend.my:x.my)||'')}</textarea>
      <div class="acts" style="align-items:center">
       <button class="btn ibx" id="vTts" aria-label="듣기">🔊</button>
@@ -555,7 +556,7 @@ function drawView(){
       <span style="flex:1"></span>
       <button class="gcy ${gOf(x)?'g-'+gOf(x):''}" id="vGrade" aria-label="등급 바꾸기">${gOf(x)?GNM[gOf(x)]:'미정'}</button>
      </div>
-     <div class="acts" style="align-items:center"><button class="btn del" id="vDel">삭제</button><span style="flex:1"></span><span class="lb"><span class="sv"></span></span><button class="btn pri" data-save style="min-width:92px">저장</button></div>
+     <div class="acts" style="align-items:center"><button class="btn del" id="vDel">삭제</button><span style="flex:1"></span><span class="lb"><span class="sv"></span></span><button class="btn" data-close>닫기</button><button class="btn pri" data-save style="min-width:92px">저장</button></div>
      <details style="font-size:12px;color:var(--mute)"><summary>날짜 바꾸기</summary><input type="date" id="vDate" value="${x.date}" aria-label="날짜 바꾸기" style="margin-top:4px"></details>
     </div>
    </div></div>`;
@@ -567,7 +568,8 @@ function drawView(){
   {const pn=document.querySelector('.pane');let x0=null,y0=0;pn.addEventListener('touchstart',e=>{if(e.touches.length!==1||e.target.closest('textarea,input,select,.ms')){x0=null;return}x0=e.touches[0].clientX;y0=e.touches[0].clientY},{passive:true});
    pn.addEventListener('touchend',e=>{if(x0==null)return;const dx=e.changedTouches[0].clientX-x0,dy=e.changedTouches[0].clientY-y0;x0=null;if(Math.abs(dx)>60&&Math.abs(dx)>Math.abs(dy)*1.5)step(dx<0?1:-1)},{passive:true})}
   /* 나의 메모: 🎤 말로 입력 (누르면 시작, 다시 누르면 끝) */
-  $('#vMic').onclick=()=>toggleMic();
+  document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>tryClose(x));
+  $('#aShow')&&($('#aShow').onclick=()=>{aiOpen=true;drawView()});
   $('#vImg').onclick=()=>openSolo(x);$('#vSolo').onclick=()=>openSolo(x);
   $('#vCrop').onclick=()=>recrop(x);
   $('#vGrade').onclick=async()=>{const o=['','A','B','C'],g=o[(o.indexOf(gOf(x))+1)%4];const ae=document.activeElement?.id;
@@ -577,21 +579,26 @@ function drawView(){
     else if(r&&r.auto){toast('Claude가 맞추는 중…');try{const sm=await getSample();const j=sm&&await sm.json(thumbPrompt,{images:[src],modelTier:'quick'});const th=j&&okThumb(j.thumb);if(th){await save(x,{thumb:th,thumbMan:false},{noLearn:true});render();toast('자동으로 맞춤')}else toast('맞추지 못했어요')}catch(e){toast('맞추지 못했어요')}}};
   $('#vTts').onclick=()=>{try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance((x.cat||'')+'. '+($('#vMemo').value||'')+' '+($('#vMy').value||''));u.lang='ko-KR';u.rate=1.05;speechSynthesis.speak(u)}catch(e){toast('이 화면에선 듣기를 쓸 수 없습니다')}};
   const later=f=>{Object.assign(pend,f);dirty=true;markSv('dirty')};
-  document.querySelectorAll('#vMemo,#vMy,#vSrc').forEach(el=>el.addEventListener('focus',()=>liftInput(el)));
+  document.querySelectorAll('#vMemo,#vMy').forEach(el=>el.addEventListener('focus',()=>liftInput(el)));
   $('#vMemo').oninput=e=>later({memo:e.target.value});
   $('#vMy').oninput=e=>later({my:e.target.value});
-  $('#vSrc').oninput=e=>later({src:e.target.value});
   document.querySelectorAll('[data-save]').forEach(b=>b.onclick=async()=>{
     const bs=[...document.querySelectorAll('[data-save]')];bs.forEach(e=>{e.textContent='저장 중…'});markSv('busy');
-    Object.assign(pend,{memo:$('#vMemo').value,my:$('#vMy').value,src:$('#vSrc').value});const t0=Date.now(),ok=await flush(x);dirty=false;
+    Object.assign(pend,{memo:$('#vMemo').value,my:$('#vMy').value});const t0=Date.now(),ok=await flush(x);dirty=false;
     await new Promise(r=>setTimeout(r,Math.max(0,500-(Date.now()-t0))));
     bs.forEach(e=>{e.textContent=ok?'✓ 저장됨':'저장 실패';e.classList.toggle('done',ok)});markSv(ok?'ok':'dirty');toast(ok?'저장됨 ✓':'저장 실패',1800);
     await new Promise(r=>setTimeout(r,1500));
     if(ok&&fillOn&&st.open===x.id){const j=viewList.findIndex(v=>v.id===x.id);if(j<viewList.length-1){step(1);return}toast('채우기 끝 ✓ 전부 채웠어요',2500);closeView();return}
     bs.forEach(e=>{if(document.body.contains(e)){e.textContent='저장';e.classList.remove('done')}})});
-  $('#vCat').onchange=async e=>{await flush(x);await save(x,{cat:e.target.value});dirty=false;drawView();markSv('ok')};
+  $('#vCat').onchange=async e=>{let v=e.target.value;
+    if(v==='__edit'){e.target.value=x.cat||'미분류';sheetCats();return}
+    if(v==='__add'){e.target.value=x.cat||'미분류';const box=$('#catAdd');box.hidden=false;const ip=$('#catNew');ip.focus();
+      const go=async()=>{const nm=ip.value.trim();if(!nm)return;if(!st.cats.includes(nm)){st.cats=[...st.cats.filter(c=>c!=='미분류'),nm,...(st.cats.includes('미분류')?['미분류']:[])];await Store.saveCats(st.cats);toast('「'+nm+'」 추가')}
+        await flush(x);await save(x,{cat:nm});dirty=false;drawView();markSv('ok')};
+      $('#catOk').onclick=go;ip.onkeydown=k=>{if(k.key==='Enter')go()};$('#catX').onclick=()=>{box.hidden=true};return}
+    await flush(x);await save(x,{cat:v});dirty=false;drawView();markSv('ok')};
   $('#aRe')&&($('#aRe').onclick=()=>{count('ai');recommend(x)});
-  document.querySelectorAll('[data-am]').forEach(b=>b.onclick=async()=>{const m=x.ai.memos[+b.dataset.am];pend.my=$('#vMy').value;pend.src=$('#vSrc').value;await flush(x);await save(x,{memo:x.memo===m?'':m});dirty=false;drawView();markSv('ok')});
+  document.querySelectorAll('[data-am]').forEach(b=>b.onclick=async()=>{const m=x.ai.memos[+b.dataset.am];pend.my=$('#vMy').value;await flush(x);const nm=x.memo===m?'':m;await save(x,{memo:nm,...(!x.src&&x.ai.src?{src:x.ai.src}:{})});dirty=false;aiOpen=!nm;drawView();markSv('ok')});
   $('#aCat')&&($('#aCat').onclick=async()=>{const k=x.ai.cat;if(!st.cats.includes(k)){st.cats=[...st.cats.filter(c=>c!=='미분류'),k,'미분류'];await Store.saveCats(st.cats)}await flush(x);await save(x,{cat:k,src:x.src||x.ai.src});drawView();markSv('ok')});
   $('#vDate').onchange=async e=>{const nd=e.target.value;if(!nd)return;const seq=Math.max(0,...dayItems(nd).map(v=>v.seq||0))+1;await flush(x);await save(x,{date:nd,seq});toast(lbl(nd)+'로 옮김');drawView()};
   let armed=false;$('#vDel').onclick=async e=>{if(!armed){armed=true;e.target.classList.add('arm');e.target.textContent='한 번 더 누르면 삭제';setTimeout(()=>{armed=false;const b=$('#vDel');if(b){b.classList.remove('arm');b.textContent='삭제'}},3000);return}
@@ -689,7 +696,7 @@ async function recrop(x){
     if(LOCAL)await Store.refresh();render();drawView();toast('자르기 적용')}catch(e){toast('저장 실패: '+(e.message||e.code))}
 }
 async function step(n){const i=viewList.findIndex(v=>v.id===st.open),j=i+n;if(j<0||j>=viewList.length){toast(n>0?'마지막 사진':'첫 사진',800);return}
-  const ae=document.activeElement,fid=ae&&['vMemo','vMy','vSrc'].includes(ae.id)?ae.id:null,sc=document.querySelector('.vbox')?.scrollTop||0;
+  aiOpen=false;const ae=document.activeElement,fid=ae&&['vMemo','vMy'].includes(ae.id)?ae.id:null,sc=document.querySelector('.vbox')?.scrollTop||0;
   const x=st.items.find(v=>v.id===st.open);if(x&&dirty){await flush(x);toast('저장하고 넘김',800)}dirty=false;st.open=viewList[j].id;drawView();
   const vb=document.querySelector('.vbox');if(vb)vb.scrollTop=sc;
   if(fid){const el=document.getElementById(fid);if(el){el.focus({preventScroll:true});try{el.selectionStart=el.selectionEnd=el.value.length}catch(e){}}}
@@ -722,7 +729,7 @@ $('#fIn').onchange=async e=>{
 /* ───── 시트 ───── */
 function sheet(html){$('#sheetRoot').innerHTML=`<div class="ov" id="shOv" style="background:rgba(0,0,0,.35);align-items:flex-end;padding:0"></div><div class="sheet">${html}<div class="acts" style="margin-top:10px"><span style="flex:1"></span><button class="btn pri" id="shOk">닫기</button></div></div>`;
   $('#shOv').onclick=closeSheet;$('#shOk').onclick=closeSheet}
-function closeSheet(){$('#sheetRoot').innerHTML='';render()}
+function closeSheet(){$('#sheetRoot').innerHTML='';render();if(st.open&&!dirty)drawView()}
 function sheetCats(){
   const draw=()=>{sheet(`<h3>분류 편집</h3>${st.cats.map((c,i)=>`<div class="r"><i style="width:9px;height:9px;border-radius:50%;background:${PAL[i%PAL.length]}"></i><input id="ct${i}" value="${esc(c)}"><button class="btn" data-up="${i}" aria-label="위로">↑</button><button class="btn del" data-rmc="${i}">삭제</button></div>`).join('')}
    <div class="r"><input id="ctNew" placeholder="새 분류 이름"><button class="btn pri" id="ctAdd">추가</button></div>
