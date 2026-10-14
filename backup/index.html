@@ -82,6 +82,14 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 .gsq.g-A{border-color:var(--gA)}.gsq.g-B{border-color:var(--gB)}.gsq.g-C{border-color:var(--gC)}
 .gsq.on.g-A{background:var(--gA)}.gsq.on.g-B{background:var(--gB)}.gsq.on.g-C{background:var(--gC)}
 .ibx{width:40px;height:36px;padding:0;font-size:17px}
+.gcy{width:52px;height:40px;border-radius:9px;border:2px dashed var(--line);background:var(--bg);font-size:11px;color:var(--mute);font-weight:600}
+.gcy.g-A{background:var(--gA);border:0;color:#fff}.gcy.g-B{background:var(--gB);border:0;color:#fff}.gcy.g-C{background:var(--gC);border:0;color:#fff}
+.btn.pri.done{background:var(--ok);border-color:var(--ok)}
+.thw{flex:none;width:calc(var(--th) * 1.35);height:var(--th);border-radius:4px;overflow:hidden;background:var(--line);position:relative}
+.thw img{position:absolute;left:0;top:0;width:100%;height:100%;object-fit:cover;object-position:top;max-width:none}
+.thw img.rg{object-fit:fill}
+.fin{display:inline-block;margin-left:6px;font-size:11px;color:#fff;background:var(--ok);border-radius:9px;padding:1px 8px;font-weight:600}
+.fill{height:28px;padding:0 10px;border-radius:14px;background:var(--accent);color:var(--card);font-size:12.5px;font-weight:600}
 /* 사진만 보기 */
 .solo{position:fixed;inset:0;z-index:45;background:#000;overflow:auto;-webkit-overflow-scrolling:touch;text-align:center}
 .solo img{display:block;margin:0 auto;width:100%;max-width:1000px;height:auto}
@@ -286,7 +294,7 @@ async function seedLocal(){
 
 /* ───── 버튼 사용 횟수 → 거의 안 쓰는 버튼은 ⋯ 안으로 ───── */
 const TOOLS=[{k:'search',ic:'🔍',t:'검색'},{k:'bycat',ic:'🗂',t:'분류별 모아보기 (전체 기간)'},{k:'report',ic:'📋',t:'리포트 (3일·1주)'},{k:'today',ic:'오늘',t:'오늘로'}];
-const MENU=[{k:'export',t:'📦 내보내기 (사진+메모 zip)'},{k:'cats',t:'분류 편집'},{k:'aiall',t:'✨ 미분류 전부 추천받기'},{k:'set',t:'화면·추천 설정'},{k:'store',t:'저장 공간'}];
+const MENU=[{k:'export',t:'📦 내보내기 (사진+메모 zip)'},{k:'cats',t:'분류 편집'},{k:'aiall',t:'✨ 미분류 전부 추천받기'},{k:'thumbs',t:'▣ 썸네일 핵심 부분 자동 맞추기'},{k:'set',t:'화면·추천 설정'},{k:'store',t:'저장 공간'}];
 const use=LS.get('use',{});
 function count(k){use[k]=(use[k]||0)+1;LS.set('use',use)}
 function folded(k){const tot=Object.values(use).reduce((a,b)=>a+b,0);if(k==='search')return false;return tot>=40&&(use[k]||0)/tot<0.03}
@@ -305,6 +313,7 @@ function act(k){
   else if(k==='set')return sheetSet();
   else if(k==='store')return sheetStore();
   else if(k==='aiall')return aiAll();
+  else if(k==='thumbs')return thumbAll();
   else if(k==='export')return sheetExport();
   render();
 }
@@ -326,6 +335,8 @@ const gCount=a=>{const c={A:0,B:0,C:0};let n=0;a.forEach(x=>{const g=gOf(x);if(g
 const catColor=c=>{const i=st.cats.indexOf(c);return i<0?'#6b7280':PAL[i%PAL.length]};
 const dayItems=d=>st.items.filter(x=>x.date===d).sort((a,b)=>(a.seq||0)-(b.seq||0));
 const seqOf=x=>dayItems(x.date).indexOf(x);
+function mfHtml(){const pool=st.mode==='bycat'||st.gf?st.items:dayItems(st.date),h=pool.filter(hasMy).length,todo=st.items.filter(x=>!hasMy(x)).length;
+  return [['','메모 전체',pool.length],['has','✎ 있음',h],['none','✎ 없음',pool.length-h]].map(([k,t,n])=>`<button class="gf ${st.mf===k?'on':''}" data-mf="${k}">${t}<b>${n}</b></button>`).join('')+(todo?`<button class="fill" data-fill title="날짜 상관없이 나의 메모 없는 사진을 차례로">✎ 채우기 ${todo}</button>`:'<span class="fin">전부 채움 ✓</span>')}
 const hasMy=x=>!!String(x.my||'').trim();
 const mfF=a=>st.mf==='has'?a.filter(hasMy):st.mf==='none'?a.filter(x=>!hasMy(x)):a;
 function visible(){
@@ -338,20 +349,27 @@ function rowHtml(x,showDate){
   const n=seqOf(x),c=x.cat||'미분류',col=catColor(c),busy=st.ai[x.id]==='busy';
   const g=gOf(x);
   return `<div class="it ${g?'g-'+g:''}" data-id="${x.id}" role="button" tabindex="0">
-   <img class="th" src="${Store.img(x)}" alt="" loading="lazy">
+   <div class="thw"><img src="${Store.img(x)}" alt="" loading="lazy" ${x.thumb?`class="rg" data-r="${x.thumb.join(',')}" onload="fitThumb(this)"`:''}></div>
    <div class="ix"><div class="h"><span class="sq">${CIRC[n]||'('+(n+1)+')'}</span>
      <span class="cat" style="background:${col}1f;color:${col}">${esc(c)}</span>
      ${showDate?`<span class="dt">${lbl(x.date)}</span>`:''}${busy?'<span class="spin" aria-label="추천 중"></span>':(x.aiApplied?'<span class="badge">✨</span>':'')}<span class="src">${esc(x.src||'')}</span></div>
      <div class="memo">${esc(x.memo||(busy?'Claude가 보고 있어요…':(x.my?'':'메모 없음')))}${x.my?`<span style="color:var(--accent)">${x.memo?' · ':''}✎ ${esc(x.my)}</span>`:''}</div></div>
    <button class="gb ${g?'g-'+g:''}" data-ck="${x.id}" aria-label="등급 ${g?GNM[g]:'없음'} · 누르면 바꾸기"></button></div>`;
 }
+/* 썸네일: 사진 중 핵심 영역(r=[x,y,w,h] 0~1)만 칸에 꽉 차게, 비율 유지 */
+window.fitThumb=im=>{try{const r=im.dataset.r.split(',').map(Number),b=im.parentElement.getBoundingClientRect(),nw=im.naturalWidth,nh=im.naturalHeight;if(!nw||!b.width)return;
+  const k=Math.max(b.width/(r[2]*nw),b.height/(r[3]*nh)),w=nw*k,h=nh*k,cx=(r[0]+r[2]/2)*w,cy=(r[1]+r[3]/2)*h;
+  let l=b.width/2-cx,t=b.height/2-cy;l=Math.min(0,Math.max(b.width-w,l));t=Math.min(0,Math.max(b.height-h,t));
+  Object.assign(im.style,{width:w+'px',height:h+'px',left:l+'px',top:t+'px'})}catch(e){}};
 let deep=(location.hash||'').slice(1);
-function onData(){if(deep&&ready){const id=deep;deep='';const x=st.items.find(i=>i.id===id);if(x){st.date=x.date;st.mode='day';st.cat='전체';openView(id);return}}if(st.open&&!dirty&&!document.activeElement?.matches('textarea,input,select'))drawView();render()}
+let thumbAutoRan=false;
+function onData(){if(ready&&!thumbAutoRan&&!LOCAL&&st.items.some(x=>!x.thumb)){thumbAutoRan=true;setTimeout(()=>thumbAll().catch(()=>{}),1500)}if(deep&&ready){const id=deep;deep='';const x=st.items.find(i=>i.id===id);if(x){st.date=x.date;st.mode='day';st.cat='전체';openView(id);return}}if(st.open&&!dirty&&!document.activeElement?.matches('textarea,input,select'))drawView();render()}
 
 function render(){
   renderTools();
   const d=toD(st.date),isT=st.date===ymd(new Date());
-  $('#dLabel').innerHTML=st.mode==='bycat'?`<span>분류별 · 전체 기간</span>`:(st.mode==='day'&&st.gf)?`<span>${st.gf==='none'?'미정':GNM[st.gf]} 모아보기</span>`:`<span class="n">${d.getMonth()+1}.${pad(d.getDate())}</span><small>(${WD[d.getDay()]})</small>${isT?'<span class="today">오늘</span>':''}`;
+  const td=dayItems(st.date),fin=td.length&&td.every(hasMy);
+  $('#dLabel').innerHTML=st.mode==='bycat'?`<span>분류별 · 전체 기간</span>`:(st.mode==='day'&&st.gf)?`<span>${st.gf==='none'?'미정':GNM[st.gf]} 모아보기</span>`:`<span class="n">${d.getMonth()+1}.${pad(d.getDate())}</span><small>(${WD[d.getDay()]})</small>${isT?'<span class="today">오늘</span>':''}${fin&&st.mode==='day'&&!st.gf?'<span class="fin">'+(isT?'오늘':'')+' 정리 끝 ✓</span>':''}`;
   $('#bPrev').hidden=$('#bNext').hidden=st.mode==='bycat'||(st.mode==='day'&&!!st.gf);
   $('#sBar').hidden=st.mode!=='search';$('#rBar').hidden=st.mode!=='report';
   $('#chips').hidden=!(st.mode==='day'||st.mode==='bycat');
@@ -360,10 +378,8 @@ function render(){
   $('#chips').innerHTML=cs.map(c=>`<button class="chip ${st.cat===c?'on':''}" data-cat="${esc(c)}">${c!=='전체'?`<i style="background:${catColor(c)}"></i>`:''}${esc(c)}<b>${c==='전체'?base.length:(cnt[c]||0)}</b></button>`).join('')+`<button class="chip" data-tool="cats" aria-label="분류 편집">✎</button>`;
   $('#legend').hidden=st.mode!=='day';
   {const c={A:0,B:0,C:0,none:0};st.items.forEach(x=>{c[gOf(x)||'none']++});
-   $('#legend').innerHTML=`<button class="gf ${!st.gf?'on':''}" data-gf="">등급 전체</button>`+[['A','또 볼 것'],['B','필요할 때'],['C','봤고 끝'],['none','미정']].map(([k,t])=>`<button class="gf g-${k} ${st.gf===k?'on':''}" data-gf="${k}"><span></span>${t}<b>${c[k]}</b></button>`).join('')+`<em>${st.gf?'전체 기간 모아보기':'칩을 누르면 전체 기간 모아보기'}</em>`;}
-  {const pool=st.mode==='bycat'||st.gf?st.items:dayItems(st.date),h=pool.filter(hasMy).length;
-   $('#mfBar').hidden=!(st.mode==='day'||st.mode==='bycat');
-   $('#mfBar').innerHTML=[['','메모 전체',pool.length],['has','✎ 나의 메모 있음',h],['none','✎ 나의 메모 없음',pool.length-h]].map(([k,t,n])=>`<button class="gf ${st.mf===k?'on':''}" data-mf="${k}">${t}<b>${n}</b></button>`).join('')+(st.mode==='bycat'?'<em>옆으로 밀면 다음 분류</em>':'');}
+   $('#legend').innerHTML=`<button class="gf ${!st.gf?'on':''}" data-gf="">등급 전체</button>`+[['A','또 볼 것'],['B','필요할 때'],['C','봤고 끝'],['none','미정']].map(([k,t])=>`<button class="gf g-${k} ${st.gf===k?'on':''}" data-gf="${k}"><span></span>${t}<b>${c[k]}</b></button>`).join('')+'<span style="width:1px;height:20px;background:var(--line);margin:0 3px"></span>'+mfHtml();}
+  $('#mfBar').hidden=st.mode!=='bycat';if(st.mode==='bycat')$('#mfBar').innerHTML=mfHtml()+'<em>옆으로 밀면 다음 분류</em>';
   const L=$('#list');$('#hint').textContent='';
   if(!ready){L.innerHTML=`<div class="empty">사진 불러오는 중…</div>`;return}
   if(!Store.ok){L.innerHTML=`<div class="empty">${LOCAL?'이 브라우저에서 기기 저장소를 열 수 없습니다.<br>시크릿 창이 아닌 일반 창에서 열어 주세요.':'저장소에 연결하지 못했습니다.<br>로그인한 상태로 claude.ai에서 열어 주세요.'}</div>`;return}
@@ -381,7 +397,7 @@ function renderByCat(){
   const sel=st.cat==='전체'?groups:[st.cat];
   const html=sel.map(c=>{const a=mfF(st.items.filter(x=>(x.cat||'미분류')===c)).sort((p,q)=>GRK(p)-GRK(q)||q.date.localeCompare(p.date)||(p.seq-q.seq));if(!a.length&&st.cat==='전체')return'';
     const f=!!st.fold[c],dn=gCount(a),last=a[0]?lbl(a[0].date):'-';
-    return `<button class="cg" data-fold="${esc(c)}"><i style="background:${catColor(c)}"></i>${esc(c)}<small>${a.length}장 · ${dn} · 최근 ${last}</small><span class="ar">${f?'▸':'▾'}</span></button>`+(f?'':a.map(x=>rowHtml(x,true)).join(''))}).join('');
+    return `<button class="cg" data-fold="${esc(c)}"><i style="background:${catColor(c)}"></i>${esc(c)}<small>${a.length}장 · ✎ ${a.filter(hasMy).length}/${a.length} · ${dn} · 최근 ${last}</small><span class="ar">${f?'▸':'▾'}</span></button>`+(f?'':a.map(x=>rowHtml(x,true)).join(''))}).join('');
   L.innerHTML=html||`<div class="empty">아직 사진이 없습니다.<br><button data-add>＋ 사진 추가</button></div>`;
   $('#hint').textContent=`전체 ${st.items.length}장 · 분류 ${groups.length}개 · 제목을 누르면 접기`;
 }
@@ -408,6 +424,7 @@ $('#sIn').oninput=e=>{st.q=e.target.value;render()};
 $('#sClose').onclick=()=>{st.mode='day';st.q='';$('#sIn').value='';render()};
 $('#bAdd').onclick=()=>{count('add');$('#fIn').click()};
 document.addEventListener('click',e=>{
+  if(e.target.closest('[data-fill]')){fillMode();return}
   const mfb=e.target.closest('[data-mf]');if(mfb){st.mf=mfb.dataset.mf;LS.set('mf',st.mf);render();return}
   const gfb=e.target.closest('[data-gf]');if(gfb){st.gf=gfb.dataset.gf;LS.set('gf',st.gf);render();return}
   const c=e.target.closest('[data-cat]');if(c){st.cat=c.dataset.cat;LS.set('cat',st.cat);render();return}
@@ -437,7 +454,8 @@ const aiPrompt=()=>`이 스크린샷/사진을 보고 개인 스크랩 앱에 �
 - src: 출처(예: "스레드 @아이디", "유튜브 채널명", "인스타 @아이디"). 모르면 "".
 ${learn.length?`사용자가 예전 추천을 이렇게 고쳤습니다. 같은 실수를 반복하지 말고, 고친 쪽의 분류 기준·메모 말투를 따르세요:
 ${learn.slice(0,15).map(l=>`- 추천 [${l.aiCat}] "${l.aiMemo}" → 사용자 [${l.cat}] "${l.memo}"${l.src?' ('+l.src+')':''}`).join('\n')}
-`:''}형식: {"cat":"...","isNew":false,"memos":["...","...","..."],"src":"..."}`;
+`:''}- thumb: 목록 작은 썸네일(가로:세로≈4:3)에 보여줄 핵심 영역 [x,y,w,h] (사진 전체 대비 0~1 비율). 스크린샷이면 내용이 한눈에 보이는 부분(첨부 사진 + 그 위 본문 몇 줄 등), 위쪽 메뉴·상태바·아래 댓글창은 빼기.
+형식: {"cat":"...","isNew":false,"memos":["...","...","..."],"src":"...","thumb":[0.05,0.1,0.6,0.5]}`;
 async function askClaude(blob){
   if(LOCAL){
     if(!S.key)throw new Error('설정에서 Anthropic API 키를 넣어 주세요');
@@ -458,7 +476,7 @@ async function recommend(x,{apply,blob}={}){
     const memos=(r.memos||[]).filter(Boolean).slice(0,3).map(m=>String(m).slice(0,80));
     let cat=String(r.cat||'').trim()||'미분류';
     const aiRec={cat,isNew:!st.cats.includes(cat),memos,src:String(r.src||''),at:Date.now()};
-    const f={ai:aiRec};
+    const f={ai:aiRec};const th=okThumb(r.thumb);if(th&&!x.thumbMan)f.thumb=th;
     if(apply&&(!x.cat||x.cat==='미분류')&&!x.memo){
       if(aiRec.isNew&&cat!=='미분류'){st.cats=[...st.cats.filter(c=>c!=='미분류'),cat,'미분류'];await Store.saveCats(st.cats)}
       Object.assign(f,{cat,memo:memos[0]||'',src:x.src||aiRec.src,aiApplied:true});
@@ -467,17 +485,29 @@ async function recommend(x,{apply,blob}={}){
   }catch(e){delete st.ai[x.id];toast('추천 실패: '+(e.message||e.code||'알 수 없음'))}
   render();if(st.open===x.id){await flush(x);dirty=false;drawView()}
 }
+function okThumb(t){if(!Array.isArray(t)||t.length!==4)return null;let [a,b,c,d]=t.map(Number);if(![a,b,c,d].every(isFinite))return null;a=Math.max(0,Math.min(.95,a));b=Math.max(0,Math.min(.95,b));c=Math.max(.05,Math.min(1-a,c));d=Math.max(.05,Math.min(1-b,d));return [a,b,c,d].map(v=>+v.toFixed(3))}
+const thumbPrompt=`이 스크린샷/사진을 목록의 작은 썸네일(가로:세로≈4:3)로 보여줄 때, 내용이 한눈에 보이는 핵심 영역을 고르세요. 첨부 사진과 그 바로 위 본문 몇 줄 위주, 위쪽 메뉴·상태바·아래 댓글창은 제외. JSON만: {"thumb":[x,y,w,h]} (0~1 비율)`;
+async function thumbAll(){
+  const t=st.items.filter(x=>!x.thumb);if(!t.length)return toast('모든 사진에 썸네일 영역이 있어요');
+  toast(`${t.length}장 썸네일 맞추는 중`);let n=0;
+  for(const x of t){try{const b=await Store.blob(x);let r;
+      if(LOCAL){r=null}else{const sm=await getSample();if(!sm)break;r=await sm.json(thumbPrompt,{images:[b],modelTier:'quick'})}
+      const th=r&&okThumb(r.thumb);if(th){await save(x,{thumb:th},{noLearn:true});n++;render()}}catch(e){}}
+  toast(`썸네일 ${n}장 맞춤`);
+}
 async function aiAll(){const t=st.items.filter(x=>(!x.cat||x.cat==='미분류')&&!x.memo);if(!t.length)return toast('추천할 미분류 사진이 없습니다');toast(`${t.length}장 추천 시작`);for(const x of t)await recommend(x,{apply:true})}
 
 /* ───── 집중 보기 ───── */
-let viewList=[];
+let viewList=[],fillOn=false;
+function fillMode(){const t=st.items.filter(x=>!hasMy(x)).sort((a,b)=>b.date.localeCompare(a.date)||(a.seq-b.seq));if(!t.length)return toast('전부 채웠어요 ✓');
+  fillOn=true;viewList=t;st.open=t[0].id;drawView();toast(`채우기 ${t.length}장 · 저장하면 다음 사진`,1800);setTimeout(()=>{const n=$('#vMy');n&&n.focus()},250)}
 function openView(id){
   const x=st.items.find(i=>i.id===id);if(!x)return;
   if(st.mode==='search')viewList=visible();
   else if(st.mode==='bycat')viewList=mfF(st.items.filter(v=>(v.cat||'미분류')===(x.cat||'미분류'))).sort((p,q)=>q.date.localeCompare(p.date)||(p.seq-q.seq));
   else if(st.mode==='report')viewList=dayItems(x.date);
   else viewList=visible();
-  st.open=id;drawView()}
+  fillOn=false;st.open=id;drawView()}
 function tryClose(x){
   if(!dirty)return closeView();
   const d=document.createElement('div');d.className='ov';d.style.zIndex=60;d.style.background='rgba(0,0,0,.5)';
@@ -486,7 +516,7 @@ function tryClose(x){
   d.onclick=async e=>{const k=e.target.dataset&&e.target.dataset.k;if(!k&&e.target!==d)return;d.remove();
     if(k==='s'){await flush(x);dirty=false;toast('저장됨');closeView()}else if(k==='d'){pend={};dirty=false;closeView()}};
 }
-function closeView(){document.querySelectorAll('.solo').forEach(e=>e.remove());st.open=null;$('#ovRoot').innerHTML='';try{speechSynthesis.cancel()}catch(e){}render()}
+function closeView(){fillOn=false;document.querySelectorAll('.solo').forEach(e=>e.remove());st.open=null;$('#ovRoot').innerHTML='';try{speechSynthesis.cancel()}catch(e){}render()}
 let dirty=false,pend={},flushT=null;
 async function flush(x){clearTimeout(flushT);const f=pend;pend={};if(!Object.keys(f).length){return true}try{await save(x,f);return true}catch(e){return false}}
 function markSv(t){document.querySelectorAll('.sv').forEach(el=>{el.textContent=t==='dirty'?'● 저장 안 됨':t==='ok'?'✓ 저장됨':t==='busy'?'저장 중…':'';el.className='sv '+(t||'')})}
@@ -500,7 +530,7 @@ function drawView(){
       ${x.cat!==ai.cat||(!x.src&&ai.src)?`<button class="btn" id="aCat" style="align-self:flex-start;height:28px;font-size:12px">${x.cat!==ai.cat?`분류를 「${esc(ai.cat)}」로`:''}${!x.src&&ai.src?(x.cat!==ai.cat?' · ':'')+'출처 넣기':''}</button>`:''}</div>`
     :`<button class="btn" id="aRe" style="align-self:flex-start">✨ Claude 추천 받기</button>`;
   $('#ovRoot').innerHTML=`<div class="ov" id="ov">
-   <span class="pos">${lbl(x.date)} ${CIRC[n]||''} · ${i+1}/${viewList.length}</span>
+   <span class="pos">${fillOn?'✎ 채우기 · ':''}${lbl(x.date)} ${CIRC[n]||''} · ${i+1}/${viewList.length}</span>
    <button class="x" id="vX" aria-label="닫기">✕</button>
    ${i>0?'<button class="nav l" id="vL" aria-label="이전 사진">‹</button>':''}${i<viewList.length-1?'<button class="nav r" id="vR" aria-label="다음 사진">›</button>':''}
    <div class="vbox">
@@ -518,14 +548,14 @@ function drawView(){
      <div class="lb">✎ 나의 메모 <small style="font-weight:400">(덧붙일 생각)</small><button class="btn" id="vMic" style="margin-left:auto;height:30px;font-size:13px">${mic?'■ 끝':'🎤 말로'}</button></div>
      <textarea id="vMy" placeholder="내 생각·쓸 곳 덧붙이기">${esc(('my' in pend?pend.my:x.my)||'')}</textarea>
      <div class="acts" style="align-items:center">
-      ${GR.map(([k,t])=>`<button class="gsq g-${k} ${gOf(x)===k?'on':''}" data-gp="${k}" title="${t}" aria-label="${t}"></button>`).join('')}
       <button class="btn ibx" id="vTts" aria-label="듣기">🔊</button>
       <button class="btn ibx" id="vSolo" aria-label="사진만 크게">⛶</button>
       <button class="btn ibx" id="vCrop" aria-label="자르기·회전">✂</button>
+      <button class="btn ibx" id="vThumb" aria-label="썸네일 영역">▣</button>
       <span style="flex:1"></span>
-      <button class="btn del" id="vDel">삭제</button>
-      <button class="btn pri" data-save>저장</button>
+      <button class="gcy ${gOf(x)?'g-'+gOf(x):''}" id="vGrade" aria-label="등급 바꾸기">${gOf(x)?GNM[gOf(x)]:'미정'}</button>
      </div>
+     <div class="acts" style="align-items:center"><button class="btn del" id="vDel">삭제</button><span style="flex:1"></span><span class="lb"><span class="sv"></span></span><button class="btn pri" data-save style="min-width:92px">저장</button></div>
      <details style="font-size:12px;color:var(--mute)"><summary>날짜 바꾸기</summary><input type="date" id="vDate" value="${x.date}" aria-label="날짜 바꾸기" style="margin-top:4px"></details>
     </div>
    </div></div>`;
@@ -540,13 +570,25 @@ function drawView(){
   $('#vMic').onclick=()=>toggleMic();
   $('#vImg').onclick=()=>openSolo(x);$('#vSolo').onclick=()=>openSolo(x);
   $('#vCrop').onclick=()=>recrop(x);
-  document.querySelectorAll('[data-gp]').forEach(b=>b.onclick=()=>setGrade(x.id,gOf(x)===b.dataset.gp?'':b.dataset.gp));
+  $('#vGrade').onclick=async()=>{const o=['','A','B','C'],g=o[(o.indexOf(gOf(x))+1)%4];const ae=document.activeElement?.id;
+    const b=$('#vGrade');b.className='gcy '+(g?'g-'+g:'');b.textContent=g?GNM[g]:'미정';
+    Object.assign(x,{g,done:g==='C'});await Store.update(x.id,{g,done:g==='C'}).catch(()=>toast('저장 실패'));if(LOCAL)Store.refresh();render()};
+  $('#vThumb').onclick=async()=>{let src;try{src=await Store.blob(x)}catch(e){}if(!src)return;const r=await cropUI(src,{pick:x.thumb||null});if(r&&r.r){await save(x,{thumb:r.r.map(v=>+v.toFixed(3)),thumbMan:true},{noLearn:true});render();toast('썸네일 영역 바꿈')}
+    else if(r&&r.auto){toast('Claude가 맞추는 중…');try{const sm=await getSample();const j=sm&&await sm.json(thumbPrompt,{images:[src],modelTier:'quick'});const th=j&&okThumb(j.thumb);if(th){await save(x,{thumb:th,thumbMan:false},{noLearn:true});render();toast('자동으로 맞춤')}else toast('맞추지 못했어요')}catch(e){toast('맞추지 못했어요')}}};
   $('#vTts').onclick=()=>{try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance((x.cat||'')+'. '+($('#vMemo').value||'')+' '+($('#vMy').value||''));u.lang='ko-KR';u.rate=1.05;speechSynthesis.speak(u)}catch(e){toast('이 화면에선 듣기를 쓸 수 없습니다')}};
   const later=f=>{Object.assign(pend,f);dirty=true;markSv('dirty')};
+  document.querySelectorAll('#vMemo,#vMy,#vSrc').forEach(el=>el.addEventListener('focus',()=>liftInput(el)));
   $('#vMemo').oninput=e=>later({memo:e.target.value});
   $('#vMy').oninput=e=>later({my:e.target.value});
   $('#vSrc').oninput=e=>later({src:e.target.value});
-  document.querySelectorAll('[data-save]').forEach(b=>b.onclick=async()=>{markSv('busy');Object.assign(pend,{memo:$('#vMemo').value,my:$('#vMy').value,src:$('#vSrc').value});const ok=await flush(x);dirty=false;markSv(ok?'ok':'dirty');toast(ok?'저장됨':'저장 실패')});
+  document.querySelectorAll('[data-save]').forEach(b=>b.onclick=async()=>{
+    const bs=[...document.querySelectorAll('[data-save]')];bs.forEach(e=>{e.textContent='저장 중…'});markSv('busy');
+    Object.assign(pend,{memo:$('#vMemo').value,my:$('#vMy').value,src:$('#vSrc').value});const t0=Date.now(),ok=await flush(x);dirty=false;
+    await new Promise(r=>setTimeout(r,Math.max(0,500-(Date.now()-t0))));
+    bs.forEach(e=>{e.textContent=ok?'✓ 저장됨':'저장 실패';e.classList.toggle('done',ok)});markSv(ok?'ok':'dirty');toast(ok?'저장됨 ✓':'저장 실패',1800);
+    await new Promise(r=>setTimeout(r,1500));
+    if(ok&&fillOn&&st.open===x.id){const j=viewList.findIndex(v=>v.id===x.id);if(j<viewList.length-1){step(1);return}toast('채우기 끝 ✓ 전부 채웠어요',2500);closeView();return}
+    bs.forEach(e=>{if(document.body.contains(e)){e.textContent='저장';e.classList.remove('done')}})});
   $('#vCat').onchange=async e=>{await flush(x);await save(x,{cat:e.target.value});dirty=false;drawView();markSv('ok')};
   $('#aRe')&&($('#aRe').onclick=()=>{count('ai');recommend(x)});
   document.querySelectorAll('[data-am]').forEach(b=>b.onclick=async()=>{const m=x.ai.memos[+b.dataset.am];pend.my=$('#vMy').value;pend.src=$('#vSrc').value;await flush(x);await save(x,{memo:x.memo===m?'':m});dirty=false;drawView();markSv('ok')});
@@ -558,6 +600,11 @@ function drawView(){
     try{await Store.del(x);if(x.orig&&x.orig!==x.aid&&Store.assets&&!LOCAL)Store.assets.delete(x.orig).catch(()=>{});if(LOCAL)Store.refresh();toast('삭제됨')}catch(err){toast('삭제 실패')}
     if(nx){st.open=nx.id;drawView()}else closeView()};
 }
+/* 키보드가 올라오면 입력칸을 보이는 화면 위쪽으로 */
+function liftInput(el){const go=()=>{const vb=document.querySelector('.vbox');if(!vb||!document.body.contains(el))return;
+  const vv=window.visualViewport,h=vv?vv.height:innerHeight,r=el.getBoundingClientRect(),want=Math.min(h*0.25,120);
+  if(r.top<want-10||r.bottom>h-10)vb.scrollTop+=r.top-want};setTimeout(go,120);setTimeout(go,420)}
+if(window.visualViewport)visualViewport.addEventListener('resize',()=>{const ov=document.getElementById('ov');if(!ov)return;ov.style.height=visualViewport.height+'px';ov.style.bottom='auto';const a=document.activeElement;if(a&&['vMemo','vMy','vSrc'].includes(a.id))liftInput(a)});
 let mic=null;
 function toggleMic(){
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition,b=$('#vMic');
@@ -583,23 +630,24 @@ function openSolo(x){
   const im=d.querySelector('img');d._z=1;let p0=null,x0=null,y0=0;
   const dist=t=>Math.hypot(t[0].clientX-t[1].clientX,t[0].clientY-t[1].clientY);
   d.addEventListener('touchstart',e=>{if(e.touches.length===2){const r=im.getBoundingClientRect();p0={d:dist(e.touches),z:d._z,w:r.width,cx:(e.touches[0].clientX+e.touches[1].clientX)/2,cy:(e.touches[0].clientY+e.touches[1].clientY)/2,sl:d.scrollLeft,st:d.scrollTop,l:r.left+d.scrollLeft,t:r.top+d.scrollTop};x0=null}
-    else if(e.touches.length===1&&d._z<=1.02){x0=e.touches[0].clientX;y0=e.touches[0].clientY}},{passive:true});
+    else if(e.touches.length===1&&d._z<=1.02){x0=e.touches[0].clientX;y0=e.touches[0].clientY;d._st=d.scrollTop}},{passive:true});
   d.addEventListener('touchmove',e=>{if(!p0||e.touches.length!==2)return;e.preventDefault();
     const z=Math.max(1,Math.min(5,p0.z*dist(e.touches)/p0.d)),k=z/p0.z;d._z=z;
     d.classList.remove('fit');im.style.maxWidth='none';im.style.width=(p0.w*k)+'px';
     d.scrollLeft=(p0.sl+p0.cx)*k-p0.cx;d.scrollTop=(p0.st+p0.cy)*k-p0.cy},{passive:false});
   d.addEventListener('touchend',e=>{if(p0&&e.touches.length<2){p0=null;if(d._z<=1.02){d._z=1;im.style.width='';im.style.maxWidth='';if(LS.get('soloFit',false))d.classList.add('fit')}return}
-    if(x0==null)return;const dx=e.changedTouches[0].clientX-x0,dy=e.changedTouches[0].clientY-y0;x0=null;if(Math.abs(dx)>60&&Math.abs(dx)>Math.abs(dy)*1.5)step(dx<0?1:-1)},{passive:true});
+    if(x0==null)return;const dx=e.changedTouches[0].clientX-x0,dy=e.changedTouches[0].clientY-y0;x0=null;if(Math.abs(dx)>60&&Math.abs(dx)>Math.abs(dy)*1.5)return step(dx<0?1:-1);
+    if(Math.abs(dy)>90&&Math.abs(dy)>Math.abs(dx)*1.5){const top=d._st<=2,bot=d._st+d.clientHeight>=d.scrollHeight-2;if((dy>0&&top)||(dy<0&&bot)||d.classList.contains('fit'))d.remove()}},{passive:true});
   d.addEventListener('dblclick',()=>{d._z=1;im.style.width='';im.style.maxWidth=''});
 }
 /* 자르기·회전 (기록장과 같은 방식) → resolve(blob) · 'keep'(그대로) · 'all'(나머지 그대로) · null(취소) */
-function cropUI(blob,{multi}={}){return new Promise(async done=>{
+function cropUI(blob,{multi,pick}={}){return new Promise(async done=>{
   let img;try{img=await createImageBitmap(blob,{imageOrientation:'from-image'})}catch(e){done('keep');return}
   let ratio=0,crop={x:0,y:0,w:1,h:1},drag=null;const R=$('#sheetRoot');
   R.innerHTML=`<div class="ov" style="background:rgba(0,0,0,.6);align-items:flex-end;padding:0"></div><div class="sheet" style="max-height:94vh">
-   <h3>자르기·회전<span style="flex:1"></span>${multi?'<button class="btn" id="cAll">나머지 전부 그대로</button>':''}<button class="btn" id="cX">취소</button></h3>
+   <h3>${pick!==undefined?'썸네일에 보일 부분':'자르기·회전'}<span style="flex:1"></span>${multi?'<button class="btn" id="cAll">나머지 전부 그대로</button>':''}<button class="btn" id="cX">취소</button></h3>
    <div id="cW"></div>
-   <div class="chips" style="flex-wrap:wrap;margin-top:8px">${[['자유',0],['1:1',1],['4:3',4/3],['3:4',3/4],['16:9',16/9],['9:16',9/16]].map(([n,r],i)=>`<button class="chip ${i?'':'on'}" data-r="${r}">${n}</button>`).join('')}<button class="chip" id="cRot">↻ 회전</button><button class="chip" id="cFull">전체</button></div>
+   <div class="chips" style="flex-wrap:wrap;margin-top:8px">${[['자유',0],['1:1',1],['4:3',4/3],['3:4',3/4],['16:9',16/9],['9:16',9/16]].map(([n,r],i)=>`<button class="chip ${i?'':'on'}" data-r="${r}">${n}</button>`).join('')}${pick!==undefined?'':'<button class="chip" id="cRot">↻ 회전</button>'}<button class="chip" id="cFull">전체</button></div>
    <div class="acts" style="margin-top:10px"><span class="hint" style="margin:0;align-self:center">모서리: 크기 · 안쪽: 위치</span><span style="flex:1"></span><button class="btn" id="cKeep">그대로</button><button class="btn pri" id="cOk">적용</button></div></div>`;
   const pc=document.createElement('canvas'),stg=document.createElement('div'),box=document.createElement('div');
   stg.className='cst';box.className='cbx';box.innerHTML='<i class="nw" data-h="nw"></i><i class="ne" data-h="ne"></i><i class="sw" data-h="sw"></i><i class="se" data-h="se"></i>';
@@ -607,11 +655,11 @@ function cropUI(blob,{multi}={}){return new Promise(async done=>{
   const drawPc=()=>{const k=Math.min(1,1200/Math.max(img.width,img.height));pc.width=Math.round(img.width*k);pc.height=Math.round(img.height*k);pc.getContext('2d').drawImage(img,0,0,pc.width,pc.height);stg.style.width=`min(100%, ${(60*pc.width/pc.height).toFixed(2)}vh)`};
   const lay=()=>{const r=pc.getBoundingClientRect();if(!r.width)return;Object.assign(box.style,{left:crop.x*r.width+'px',top:crop.y*r.height+'px',width:crop.w*r.width+'px',height:crop.h*r.height+'px'})};
   const reset=()=>{if(!ratio)crop={x:0,y:0,w:1,h:1};else{const ar=img.width/img.height;let w=1,h=ar/ratio;if(h>1){h=1;w=ratio/ar}crop={x:(1-w)/2,y:(1-h)/2,w,h}}lay()};
-  drawPc();requestAnimationFrame(reset);
+  drawPc();requestAnimationFrame(()=>{reset();if(Array.isArray(pick)){crop={x:pick[0],y:pick[1],w:pick[2],h:pick[3]};lay()}});
   const rb=[...R.querySelectorAll('[data-r]')];
   rb.forEach(x=>x.onclick=()=>{ratio=+x.dataset.r;rb.forEach(y=>y.classList.toggle('on',y===x));reset()});
   R.querySelector('#cFull').onclick=()=>{ratio=0;rb.forEach((y,i)=>y.classList.toggle('on',!i));reset()};
-  R.querySelector('#cRot').onclick=()=>{const c=document.createElement('canvas');c.width=img.height;c.height=img.width;const g=c.getContext('2d');g.translate(c.width,0);g.rotate(Math.PI/2);g.drawImage(img,0,0);img=c;drawPc();requestAnimationFrame(reset)};
+  R.querySelector('#cRot')&&(R.querySelector('#cRot').onclick=()=>{const c=document.createElement('canvas');c.width=img.height;c.height=img.width;const g=c.getContext('2d');g.translate(c.width,0);g.rotate(Math.PI/2);g.drawImage(img,0,0);img=c;drawPc();requestAnimationFrame(reset)});
   stg.onpointerdown=e=>{const h=e.target.dataset&&e.target.dataset.h;if(!h&&!box.contains(e.target))return;const r=pc.getBoundingClientRect();drag={h:h||'mv',sx:e.clientX,sy:e.clientY,c:{...crop},W:r.width,H:r.height};stg.setPointerCapture(e.pointerId);e.preventDefault()};
   stg.onpointermove=e=>{if(!drag)return;const dx=(e.clientX-drag.sx)/drag.W,dy=(e.clientY-drag.sy)/drag.H,c=drag.c,M=.05;
     if(drag.h==='mv')crop={...c,x:Math.min(Math.max(0,c.x+dx),1-c.w),y:Math.min(Math.max(0,c.y+dy),1-c.h)};
@@ -627,6 +675,7 @@ function cropUI(blob,{multi}={}){return new Promise(async done=>{
   R.querySelector('#cX').onclick=()=>end(null);
   R.querySelector('#cKeep').onclick=()=>end('keep');
   R.querySelector('#cAll')&&(R.querySelector('#cAll').onclick=()=>end('all'));
+  if(pick!==undefined){R.querySelector('#cKeep').textContent='자동으로';R.querySelector('#cKeep').onclick=()=>end({auto:true});R.querySelector('#cOk').onclick=()=>end({r:[crop.x,crop.y,crop.w,crop.h]});return}
   R.querySelector('#cOk').onclick=()=>{const sx=Math.round(crop.x*img.width),sy=Math.round(crop.y*img.height),sw=Math.max(1,Math.round(crop.w*img.width)),sh=Math.max(1,Math.round(crop.h*img.height));
     const M=1800,k=Math.min(1,M/Math.max(sw,sh)),c=document.createElement('canvas');c.width=Math.round(sw*k);c.height=Math.round(sh*k);c.getContext('2d').drawImage(img,sx,sy,sw,sh,0,0,c.width,c.height);
     c.toBlob(b=>end(b||'keep'),'image/jpeg',.88)};
