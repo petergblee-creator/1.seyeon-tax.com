@@ -10,7 +10,7 @@ p{margin:6px 0;opacity:.85}a.bk{display:block;margin-top:22px;color:#fff;opacity
 <a class="bk" href="backup/">비상용 백업판 (이 기기에만 저장)</a></div>
 <script>
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(function(){});
-var U="https://claude.ai/artifact/A91apscVUj5fTj9ui5UPjZ";
+var U="https://claude.ai/artifact/A91apscVUj5fTj9ui5UPjZ";if(/listen/.test(location.search+location.hash)){U+="#listen";var g=document.getElementById("go");if(g)g.href=U;location.replace(U);}
 var standalone=matchMedia('(display-mode: standalone)').matches||matchMedia('(display-mode: fullscreen)').matches;
 if(standalone){location.replace(U);}
 window.addEventListener('pageshow',function(e){if(e.persisted&&standalone)location.replace(U);});
