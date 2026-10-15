@@ -243,7 +243,7 @@ const Store={ok:false,canUp:false,
     const photos=db.collection('photos'),meta=db.doc('meta/cats');this.photos=photos;this.meta=meta;this.db=db;
     this.loadLearn().then(l=>learn=l);
     meta.onSnapshot(s=>{st.cats=(s.exists&&s.data().list)||['미분류'];onData()},()=>{});
-    photos.onSnapshot(s=>{st.items=s.docs.map(d=>({id:d.id,...d.data()}));ready=true;onData()},e=>{ready=true;onData();toast('불러오기 실패: '+e.code)});
+    photos.onSnapshot(s=>{setAll(s.docs.map(d=>({id:d.id,...d.data()})));ready=true;onData()},e=>{ready=true;onData();toast('불러오기 실패: '+e.code)});
   },
   img(x){return x.aid?(LOCAL?(urlCache[x.aid]||''):'/_blob/'+x.aid):''},
   async blob(x){if(LOCAL)return idbGet('blobs',x.aid);const r=await fetch('/_blob/'+x.aid);return r.blob()},
@@ -264,11 +264,13 @@ const Store={ok:false,canUp:false,
     if(!rows.length&&!LS.get('seeded',false)){await seedLocal();meta=await idbGet('meta','cats');rows=await idbAll('photos')}
     st.cats=(meta&&meta.list)||['미분류'];learn=await this.loadLearn();
     for(const r of rows)if(r.aid&&!urlCache[r.aid]){const b=await idbGet('blobs',r.aid);if(b)urlCache[r.aid]=URL.createObjectURL(b)}
-    st.items=rows;ready=true;onData();
+    setAll(rows);ready=true;onData();
   },
-  async refresh(){if(!LOCAL)return;st.items=await idbAll('photos');const m=await idbGet('meta','cats');st.cats=(m&&m.list)||st.cats;onData()}
+  async refresh(){if(!LOCAL)return;setAll(await idbAll('photos'));const m=await idbGet('meta','cats');st.cats=(m&&m.list)||st.cats;onData()}
 };
 const urlCache={};
+const TRASH_MS=7*864e5;let purged=false;
+function setAll(a){st.all=a;st.items=a.filter(x=>!x.del);if(!purged){purged=true;a.filter(x=>x.del&&Date.now()-x.del>TRASH_MS).forEach(x=>Store.del(x).catch(()=>{}))}}
 let learn=[]; // 추천을 고친 내역 (추천 → 최종), 최근 30개
 let learnT;function noteLearn(x){
   if(!x.ai)return;const ai0=x.ai.memos&&x.ai.memos[0]||'';
@@ -294,7 +296,7 @@ async function seedLocal(){
 
 /* ───── 버튼 사용 횟수 → 거의 안 쓰는 버튼은 ⋯ 안으로 ───── */
 const TOOLS=[{k:'search',ic:'🔍',t:'검색'},{k:'bycat',ic:'🗂',t:'분류별 모아보기 (전체 기간)'},{k:'report',ic:'📋',t:'리포트 (3일·1주)'},{k:'today',ic:'오늘',t:'오늘로'}];
-const MENU=[{k:'export',t:'📦 내보내기 (사진+메모 zip)'},{k:'cats',t:'분류 편집'},{k:'aiall',t:'✨ 미분류 전부 추천받기'},{k:'thumbs',t:'▣ 썸네일 핵심 부분 자동 맞추기'},{k:'set',t:'화면·추천 설정'},{k:'store',t:'저장 공간'}];
+const MENU=[{k:'export',t:'📦 내보내기 (사진+메모 zip)'},{k:'cats',t:'분류 편집'},{k:'aiall',t:'✨ 미분류 전부 추천받기'},{k:'thumbs',t:'▣ 썸네일 핵심 부분 자동 맞추기'},{k:'set',t:'화면·추천 설정'},{k:'trash',t:'🗑 휴지통 (7일 보관)'},{k:'store',t:'저장 공간'}];
 const use=LS.get('use',{});
 function count(k){use[k]=(use[k]||0)+1;LS.set('use',use)}
 function folded(k){const tot=Object.values(use).reduce((a,b)=>a+b,0);if(k==='search')return false;return tot>=40&&(use[k]||0)/tot<0.03}
@@ -312,6 +314,7 @@ function act(k){
   else if(k==='cats')return sheetCats();
   else if(k==='set')return sheetSet();
   else if(k==='store')return sheetStore();
+  else if(k==='trash')return sheetTrash();
   else if(k==='aiall')return aiAll();
   else if(k==='thumbs')return thumbAll();
   else if(k==='export')return sheetExport();
@@ -335,8 +338,8 @@ const gCount=a=>{const c={A:0,B:0,C:0};let n=0;a.forEach(x=>{const g=gOf(x);if(g
 const catColor=c=>{const i=st.cats.indexOf(c);return i<0?'#6b7280':PAL[i%PAL.length]};
 const dayItems=d=>st.items.filter(x=>x.date===d).sort((a,b)=>(a.seq||0)-(b.seq||0));
 const seqOf=x=>dayItems(x.date).indexOf(x);
-function mfHtml(){const pool=st.mode==='bycat'||st.gf?st.items:dayItems(st.date),h=pool.filter(hasMy).length,todo=st.items.filter(x=>!hasMy(x)).length;
-  return [['','메모 전체',pool.length],['has','✎ 있음',h],['none','✎ 없음',pool.length-h]].map(([k,t,n])=>`<button class="gf ${st.mf===k?'on':''}" data-mf="${k}">${t}<b>${n}</b></button>`).join('')+(todo?`<button class="fill" data-fill title="날짜 상관없이 나의 메모 없는 사진을 차례로">✎ 채우기 ${todo}</button>`:'<span class="fin">전부 채움 ✓</span>')}
+function mfHtml(){const unc=st.items.filter(x=>(x.cat||'미분류')==='미분류').length;const pool=st.mode==='bycat'||st.gf?st.items:dayItems(st.date),h=pool.filter(hasMy).length,todo=st.items.filter(x=>!hasMy(x)).length;
+  return [['','메모 전체',pool.length],['has','✎ 있음',h],['none','✎ 없음',pool.length-h]].map(([k,t,n])=>`<button class="gf ${st.mf===k?'on':''}" data-mf="${k}">${t}<b>${n}</b></button>`).join('')+(todo?`<button class="fill" data-fill title="날짜 상관없이 나의 메모 없는 사진을 차례로">✎ 채우기 ${todo}</button>`:'<span class="fin">전부 채움 ✓</span>')+(unc?`<button class="fill" data-catm style="background:var(--gD)">🗂 분류 정하기 ${unc}</button>`:'')+(aiQ.size?`<span class="fin" style="background:var(--accent)">✨ 추천 중 ${aiQ.size}</span>`:'')}
 const hasMy=x=>!!String(x.my||'').trim();
 const mfF=a=>st.mf==='has'?a.filter(hasMy):st.mf==='none'?a.filter(x=>!hasMy(x)):a;
 function visible(){
@@ -362,8 +365,12 @@ window.fitThumb=im=>{try{const r=im.dataset.r.split(',').map(Number),b=im.parent
   let l=b.width/2-cx,t=b.height/2-cy;l=Math.min(0,Math.max(b.width-w,l));t=Math.min(0,Math.max(b.height-h,t));
   Object.assign(im.style,{width:w+'px',height:h+'px',left:l+'px',top:t+'px'})}catch(e){}};
 let deep=(location.hash||'').slice(1);
+const aiQ=new Set(),aiFail=new Set();let aiRun=false;
+async function aiResume(){if(aiRun||LOCAL)return;aiRun=true;
+  try{for(;;){const x=st.items.find(v=>(!v.cat||v.cat==='미분류')&&!v.memo&&!v.ai&&!aiFail.has(v.id)&&st.ai[v.id]!=='busy');if(!x)break;aiQ.add(x.id);render();
+      try{await recommend(x,{apply:true})}catch(e){}aiQ.delete(x.id);if(!x.ai)aiFail.add(x.id)}}finally{aiRun=false;render()}}
 let thumbAutoRan=false;
-function onData(){if(ready&&!thumbAutoRan&&!LOCAL&&st.items.some(x=>!x.thumb)){thumbAutoRan=true;setTimeout(()=>thumbAll().catch(()=>{}),1500)}if(deep&&ready){const id=deep;deep='';const x=st.items.find(i=>i.id===id);if(x){st.date=x.date;st.mode='day';st.cat='전체';openView(id);return}}if(st.open&&!dirty&&!document.activeElement?.matches('textarea,input,select'))drawView();render()}
+function onData(){if(ready&&S.autoAi)setTimeout(aiResume,800);if(ready&&!thumbAutoRan&&!LOCAL&&st.items.some(x=>!x.thumb)){thumbAutoRan=true;setTimeout(()=>thumbAll().catch(()=>{}),1500)}if(deep&&ready){const id=deep;deep='';const x=st.items.find(i=>i.id===id);if(x){st.date=x.date;st.mode='day';st.cat='전체';openView(id);return}}if(st.open&&!dirty&&!document.activeElement?.matches('textarea,input,select'))drawView();render()}
 
 function render(){
   renderTools();
@@ -425,15 +432,23 @@ $('#sClose').onclick=()=>{st.mode='day';st.q='';$('#sIn').value='';render()};
 $('#bAdd').onclick=()=>{count('add');$('#fIn').click()};
 document.addEventListener('click',e=>{
   if(e.target.closest('[data-fill]')){fillMode();return}
-  const mfb=e.target.closest('[data-mf]');if(mfb){st.mf=mfb.dataset.mf;LS.set('mf',st.mf);render();return}
-  const gfb=e.target.closest('[data-gf]');if(gfb){st.gf=gfb.dataset.gf;LS.set('gf',st.gf);render();return}
-  const c=e.target.closest('[data-cat]');if(c){st.cat=c.dataset.cat;LS.set('cat',st.cat);render();return}
+  if(e.target.closest('[data-catm]')){catMode();return}
+  if(lpFired){lpFired=false;return}
+  const mfb=e.target.closest('[data-mf]');if(mfb){const v=mfb.dataset.mf;st.mf=st.mf===v?'':v;LS.set('mf',st.mf);render();return}
+  const gfb=e.target.closest('[data-gf]');if(gfb){const v=gfb.dataset.gf;st.gf=st.gf===v?'':v;LS.set('gf',st.gf);render();return}
+  const c=e.target.closest('[data-cat]');if(c){const v=c.dataset.cat;st.cat=st.cat===v?'전체':v;LS.set('cat',st.cat);render();return}
   const fo=e.target.closest('[data-fold]');if(fo){const k=fo.dataset.fold;st.fold[k]=!st.fold[k];LS.set('fold',st.fold);render();return}
   if(e.target.closest('[data-add]')){$('#fIn').click();return}
   const g=e.target.closest('[data-goto]');if(g){st.date=g.dataset.goto;st.mode='day';render();return}
   const k=e.target.closest('[data-ck]');if(k){e.stopPropagation();setGrade(k.dataset.ck);return}
   const it=e.target.closest('#list .it');if(it)openView(it.dataset.id);
 });
+let lpFired=false;{let tm=null,sx=0,sy=0;
+  document.addEventListener('pointerdown',e=>{const c=e.target.closest('#chips [data-cat]');if(!c)return;sx=e.clientX;sy=e.clientY;clearTimeout(tm);
+    tm=setTimeout(()=>{lpFired=true;try{navigator.vibrate&&navigator.vibrate(15)}catch(er){}const v=c.dataset.cat;sheetCats(v==='전체'?null:v)},550)});
+  document.addEventListener('pointermove',e=>{if(tm&&Math.hypot(e.clientX-sx,e.clientY-sy)>10){clearTimeout(tm);tm=null}});
+  ['pointerup','pointercancel'].forEach(k=>document.addEventListener(k,()=>{clearTimeout(tm);tm=null}));
+  document.addEventListener('contextmenu',e=>{if(e.target.closest('#chips'))e.preventDefault()})}
 document.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.matches('.it'))openView(e.target.dataset.id)});
 function swipe(el,fn){let x0=null,y0=0;el.addEventListener('pointerdown',e=>{if(e.pointerType==='mouse'&&e.button)return;x0=e.clientX;y0=e.clientY},{passive:true});
   el.addEventListener('pointerup',e=>{if(x0==null)return;const dx=e.clientX-x0,dy=e.clientY-y0;x0=null;if(Math.abs(dx)>60&&Math.abs(dx)>Math.abs(dy)*1.5)fn(dx<0?1:-1)},{passive:true});
@@ -498,16 +513,18 @@ async function thumbAll(){
 async function aiAll(){const t=st.items.filter(x=>(!x.cat||x.cat==='미분류')&&!x.memo);if(!t.length)return toast('추천할 미분류 사진이 없습니다');toast(`${t.length}장 추천 시작`);for(const x of t)await recommend(x,{apply:true})}
 
 /* ───── 집중 보기 ───── */
-let viewList=[],fillOn=false;
+let viewList=[],fillOn=false,catOn=false;
+function catMode(){const t=st.items.filter(x=>(x.cat||'미분류')==='미분류').sort((a,b)=>b.date.localeCompare(a.date)||(a.seq-b.seq));if(!t.length)return toast('미분류 사진이 없어요 ✓');
+  catOn=true;fillOn=false;viewList=t;st.open=t[0].id;drawView();toast(`분류 정하기 ${t.length}장 · 누르면 다음 사진`,1800)}
 function fillMode(){const t=st.items.filter(x=>!hasMy(x)).sort((a,b)=>b.date.localeCompare(a.date)||(a.seq-b.seq));if(!t.length)return toast('전부 채웠어요 ✓');
-  fillOn=true;viewList=t;st.open=t[0].id;drawView();toast(`채우기 ${t.length}장 · 저장하면 다음 사진`,1800);setTimeout(()=>{const n=$('#vMy');n&&n.focus()},250)}
+  fillOn=true;catOn=false;viewList=t;st.open=t[0].id;drawView();toast(`채우기 ${t.length}장 · 저장하면 다음 사진`,1800);setTimeout(()=>{const n=$('#vMy');n&&n.focus()},250)}
 function openView(id){
   const x=st.items.find(i=>i.id===id);if(!x)return;
   if(st.mode==='search')viewList=visible();
   else if(st.mode==='bycat')viewList=mfF(st.items.filter(v=>(v.cat||'미분류')===(x.cat||'미분류'))).sort((p,q)=>q.date.localeCompare(p.date)||(p.seq-q.seq));
   else if(st.mode==='report')viewList=dayItems(x.date);
   else viewList=visible();
-  fillOn=false;st.open=id;drawView()}
+  fillOn=false;catOn=false;st.open=id;drawView()}
 function tryClose(x){
   if(!dirty)return closeView();
   const d=document.createElement('div');d.className='ov';d.style.zIndex=60;d.style.background='rgba(0,0,0,.5)';
@@ -516,7 +533,7 @@ function tryClose(x){
   d.onclick=async e=>{const k=e.target.dataset&&e.target.dataset.k;if(!k&&e.target!==d)return;d.remove();
     if(k==='s'){await flush(x);dirty=false;toast('저장됨');closeView()}else if(k==='d'){pend={};dirty=false;closeView()}};
 }
-function closeView(){fillOn=false;document.querySelectorAll('.solo').forEach(e=>e.remove());st.open=null;$('#ovRoot').innerHTML='';try{speechSynthesis.cancel()}catch(e){}render()}
+function closeView(){fillOn=false;catOn=false;document.querySelectorAll('.solo').forEach(e=>e.remove());st.open=null;$('#ovRoot').innerHTML='';try{speechSynthesis.cancel()}catch(e){}render()}
 let aiOpen=false,dirty=false,pend={},flushT=null;
 async function flush(x){clearTimeout(flushT);const f=pend;pend={};if(!Object.keys(f).length){return true}try{await save(x,f);return true}catch(e){return false}}
 function markSv(t){document.querySelectorAll('.sv').forEach(el=>{el.textContent=t==='dirty'?'● 저장 안 됨':t==='ok'?'✓ 저장됨':t==='busy'?'저장 중…':'';el.className='sv '+(t||'')})}
@@ -531,7 +548,7 @@ function drawView(){
       ${x.cat!==ai.cat?`<button class="btn" id="aCat" style="align-self:flex-start;height:28px;font-size:12px">분류를 「${esc(ai.cat)}」로${ai.isNew?' (새로 추가)':''}</button>`:''}</div>`
     :`<button class="btn" id="aRe" style="align-self:flex-start">✨ Claude 추천 받기</button>`;
   $('#ovRoot').innerHTML=`<div class="ov" id="ov">
-   <span class="pos">${fillOn?'✎ 채우기 · ':''}${lbl(x.date)} ${CIRC[n]||''} · ${i+1}/${viewList.length}</span>
+   <span class="pos">${fillOn?'✎ 채우기 · ':''}${catOn?'🗂 분류 정하기 · ':''}${lbl(x.date)} ${CIRC[n]||''} · ${i+1}/${viewList.length}</span>
    <button class="x" id="vX" aria-label="닫기">✕</button>
    ${i>0?'<button class="nav l" id="vL" aria-label="이전 사진">‹</button>':''}${i<viewList.length-1?'<button class="nav r" id="vR" aria-label="다음 사진">›</button>':''}
    <div class="vbox">
@@ -543,8 +560,9 @@ function drawView(){
       <span style="flex:1"></span><span class="lb"><span class="sv"></span></span>
       <button class="btn" data-close>닫기</button></div>
      <div id="catAdd" hidden><div class="hint" style="text-align:left;margin:0 0 4px">지금 있는 분류: ${st.cats.map(esc).join(' · ')}</div><div class="acts"><input type="text" id="catNew" placeholder="새 분류 이름" style="flex:1"><button class="btn pri" id="catOk">추가</button><button class="btn" id="catX">취소</button></div></div>
+     ${catOn?`<div class="chips" style="flex-wrap:wrap">${st.cats.filter(k=>k!=='미분류').map(k=>`<button class="chip ${x.ai&&x.ai.cat===k?'on':''}" data-pc="${esc(k)}" style="height:38px;font-size:14px"><i style="background:${catColor(k)}"></i>${esc(k)}${x.ai&&x.ai.cat===k?' ✨':''}</button>`).join('')}${x.ai&&x.ai.isNew&&!st.cats.includes(x.ai.cat)?`<button class="chip" data-pc="${esc(x.ai.cat)}" style="height:38px;font-size:14px;border-style:dashed">＋ ${esc(x.ai.cat)} ✨</button>`:''}</div>`:''}
      ${aiBox}
-     <div class="lb">✨ 추천 메모 <small style="font-weight:400">(위에서 고르거나 고쳐 쓰기)</small></div>
+     <div class="lb">✨ 추천 메모 <small style="font-weight:400">${x.memo?'':'(위에서 고르기)'}</small>${x.memo?'<button class="btn" id="vEdit" style="margin-left:auto;height:28px;font-size:12px">✏ 고치기</button>':''}</div>
      <textarea id="vMemo" placeholder="Claude 추천 중 고른 메모">${esc(('memo' in pend?pend.memo:x.memo)||'')}</textarea>
      <div class="lb">✎ 나의 메모 <small style="font-weight:400">(덧붙일 생각)</small></div>
      <textarea id="vMy" placeholder="내 생각·쓸 곳 덧붙이기">${esc(('my' in pend?pend.my:x.my)||'')}</textarea>
@@ -569,6 +587,9 @@ function drawView(){
    pn.addEventListener('touchend',e=>{if(x0==null)return;const dx=e.changedTouches[0].clientX-x0,dy=e.changedTouches[0].clientY-y0;x0=null;if(Math.abs(dx)>60&&Math.abs(dx)>Math.abs(dy)*1.5)step(dx<0?1:-1)},{passive:true})}
   /* 나의 메모: 🎤 말로 입력 (누르면 시작, 다시 누르면 끝) */
   document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>tryClose(x));
+  document.querySelectorAll('[data-pc]').forEach(b=>b.onclick=async()=>{const k=b.dataset.pc;if(!st.cats.includes(k)){st.cats=[...st.cats.filter(c=>c!=='미분류'),k,'미분류'];await Store.saveCats(st.cats)}
+    await flush(x);await save(x,{cat:k});dirty=false;toast('→ '+k,700);const j=viewList.findIndex(v=>v.id===x.id);if(j<viewList.length-1)step(1);else{toast('분류 정하기 끝 ✓',2200);closeView()}});
+  $('#vEdit')&&($('#vEdit').onclick=()=>{const t=$('#vMemo');t.focus();t.selectionStart=t.selectionEnd=t.value.length});
   $('#aShow')&&($('#aShow').onclick=()=>{aiOpen=true;drawView()});
   $('#vImg').onclick=()=>openSolo(x);$('#vSolo').onclick=()=>openSolo(x);
   $('#vCrop').onclick=()=>recrop(x);
@@ -604,7 +625,7 @@ function drawView(){
   let armed=false;$('#vDel').onclick=async e=>{if(!armed){armed=true;e.target.classList.add('arm');e.target.textContent='한 번 더 누르면 삭제';setTimeout(()=>{armed=false;const b=$('#vDel');if(b){b.classList.remove('arm');b.textContent='삭제'}},3000);return}
     pend={};dirty=false;clearTimeout(flushT);
     const nx=viewList[i+1]||viewList[i-1];st.items=st.items.filter(v=>v.id!==x.id);viewList=viewList.filter(v=>v.id!==x.id);
-    try{await Store.del(x);if(x.orig&&x.orig!==x.aid&&Store.assets&&!LOCAL)Store.assets.delete(x.orig).catch(()=>{});if(LOCAL)Store.refresh();toast('삭제됨')}catch(err){toast('삭제 실패')}
+    try{await Store.update(x.id,{del:Date.now()});x.del=Date.now();if(LOCAL)Store.refresh();toast('휴지통으로 · ⋯ → 휴지통에서 7일 안에 되살리기',2600)}catch(err){toast('삭제 실패')}
     if(nx){st.open=nx.id;drawView()}else closeView()};
 }
 /* 키보드가 올라오면 입력칸을 보이는 화면 위쪽으로 */
@@ -730,14 +751,26 @@ $('#fIn').onchange=async e=>{
 function sheet(html){$('#sheetRoot').innerHTML=`<div class="ov" id="shOv" style="background:rgba(0,0,0,.35);align-items:flex-end;padding:0"></div><div class="sheet">${html}<div class="acts" style="margin-top:10px"><span style="flex:1"></span><button class="btn pri" id="shOk">닫기</button></div></div>`;
   $('#shOv').onclick=closeSheet;$('#shOk').onclick=closeSheet}
 function closeSheet(){$('#sheetRoot').innerHTML='';render();if(st.open&&!dirty)drawView()}
-function sheetCats(){
-  const draw=()=>{sheet(`<h3>분류 편집</h3>${st.cats.map((c,i)=>`<div class="r"><i style="width:9px;height:9px;border-radius:50%;background:${PAL[i%PAL.length]}"></i><input id="ct${i}" value="${esc(c)}"><button class="btn" data-up="${i}" aria-label="위로">↑</button><button class="btn del" data-rmc="${i}">삭제</button></div>`).join('')}
+function sheetTrash(){
+  const t=(st.all||[]).filter(x=>x.del).sort((a,b)=>b.del-a.del);
+  sheet(`<h3>휴지통 <small style="color:var(--mute);font-weight:400">지운 지 7일 지나면 완전히 사라짐</small></h3>`+(t.length?t.map(x=>{const left=Math.max(0,Math.ceil((x.del+TRASH_MS-Date.now())/864e5));
+    return `<div class="r"><div class="thw" style="--th:1.4cm"><img src="${Store.img(x)}" alt=""></div><label style="font-size:13px">${lbl(x.date)} · ${esc(x.cat||'미분류')}<br><small style="color:var(--mute)">${esc((x.memo||x.my||'메모 없음').slice(0,40))} · ${left}일 남음</small></label><button class="btn pri" data-rs="${x.id}">되살리기</button><button class="btn del" data-kill="${x.id}">바로 지우기</button></div>`}).join(''):'<p class="hint">비어 있어요</p>'));
+  document.querySelectorAll('[data-rs]').forEach(b=>b.onclick=async()=>{const x=st.all.find(v=>v.id===b.dataset.rs);if(!x)return;await Store.update(x.id,{del:null});x.del=null;setAll(st.all);if(LOCAL)await Store.refresh();toast('되살림');sheetTrash()});
+  document.querySelectorAll('[data-kill]').forEach(b=>{let arm=false;b.onclick=async()=>{if(!arm){arm=true;b.textContent='한 번 더';b.classList.add('arm');return}const x=st.all.find(v=>v.id===b.dataset.kill);if(!x)return;st.all=st.all.filter(v=>v!==x);setAll(st.all);await Store.del(x).catch(()=>{});if(x.orig&&x.orig!==x.aid&&Store.assets&&!LOCAL)Store.assets.delete(x.orig).catch(()=>{});toast('완전히 지움');sheetTrash()}});
+}
+let focusCat=null;
+function sheetCats(c){focusCat=c||null;
+  const draw=()=>{sheet(`<h3>분류 편집</h3>${st.cats.map((c,i)=>`<div class="r" data-row="${i}"><span data-drag="${i}" style="touch-action:none;cursor:grab;font-size:20px;padding:0 6px;color:var(--mute)" aria-label="끌어서 순서">≡</span><i style="width:9px;height:9px;border-radius:50%;background:${PAL[i%PAL.length]}"></i><input id="ct${i}" value="${esc(c)}"><button class="btn" data-up="${i}" aria-label="위로">↑</button><button class="btn del" data-rmc="${i}">삭제</button></div>`).join('')}
    <div class="r"><input id="ctNew" placeholder="새 분류 이름"><button class="btn pri" id="ctAdd">추가</button></div>
-   <p class="hint" style="text-align:left">이름을 바꾸면 그 분류의 사진도 같이 바뀝니다. 삭제한 분류의 사진은 「미분류」로 갑니다.</p>`);
+   <p class="hint" style="text-align:left">≡를 잡고 끌면 순서 바뀜. 이름을 바꾸면 그 분류의 사진도 같이 바뀝니다. 삭제한 분류의 사진은 「미분류」로 갑니다.</p>`);
    st.cats.forEach((c,i)=>{$('#ct'+i).onchange=e=>rename(c,e.target.value.trim())});
    document.querySelectorAll('[data-up]').forEach(b=>b.onclick=()=>{const i=+b.dataset.up;if(!i)return;[st.cats[i-1],st.cats[i]]=[st.cats[i],st.cats[i-1]];saveCats();draw()});
    document.querySelectorAll('[data-rmc]').forEach(b=>b.onclick=()=>{const c=st.cats[+b.dataset.rmc];st.cats=st.cats.filter(v=>v!==c);moveCat(c,'미분류');saveCats();draw()});
-   $('#ctAdd').onclick=()=>{const v=$('#ctNew').value.trim();if(v&&!st.cats.includes(v)){st.cats.push(v);saveCats()}draw()}};
+   $('#ctAdd').onclick=()=>{const v=$('#ctNew').value.trim();if(v&&!st.cats.includes(v)){st.cats.push(v);saveCats()}draw()};
+   document.querySelectorAll('[data-drag]').forEach(h=>h.onpointerdown=e=>{e.preventDefault();const from=+h.dataset.drag,row=h.closest('.r');row.style.background='var(--accent-soft)';h.setPointerCapture(e.pointerId);let to=from;
+     h.onpointermove=ev=>{const el=document.elementFromPoint(ev.clientX,ev.clientY)?.closest('[data-row]');if(el){to=+el.dataset.row;document.querySelectorAll('[data-row]').forEach(r=>r.style.borderTop=+r.dataset.row===to&&to!==from?'2px solid var(--accent)':'')}};
+     h.onpointerup=()=>{h.onpointermove=h.onpointerup=null;if(to!==from){const [m]=st.cats.splice(from,1);st.cats.splice(to,0,m);saveCats()}draw()}});
+   if(focusCat){const k=st.cats.indexOf(focusCat);const el=$('#ct'+k);if(el){el.focus();el.select&&el.select()}focusCat=null}};
   const rename=(a,b)=>{if(!b||a===b||st.cats.includes(b))return;st.cats=st.cats.map(v=>v===a?b:v);moveCat(a,b);saveCats();if(st.cat===a)st.cat=b;draw()};
   draw();
 }
