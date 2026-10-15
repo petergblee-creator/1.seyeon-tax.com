@@ -18,7 +18,7 @@
 :root[data-theme="dark"]{
   --bg:#12151b; --card:#1b1f27; --fg:#e7e9ee; --mute:#9aa1ad; --line:#2b313c;
   --accent:#8ea8ff; --accent-soft:#232c45; --ok:#4cc38a; --warn:#ff7b72; --shade:rgba(0,0,0,.92); color-scheme:dark}
-html,body{height:100%}
+html,body{height:100%;overscroll-behavior:none}
 body{background:var(--bg);color:var(--fg);font:400 var(--fs)/1.45 var(--f-body);margin:0;padding-inline:max(10px,env(safe-area-inset-left,0px));overscroll-behavior-y:contain}
 button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;padding:0}
 button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
@@ -28,7 +28,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 .row{display:flex;align-items:center;gap:4px}
 .ib{min-width:36px;height:36px;border-radius:8px;display:inline-grid;place-items:center;font-size:16px;border:1px solid var(--line);background:var(--card)}
 .ib.on{border-color:var(--accent);background:var(--accent-soft)}
-.date{flex:1;min-width:0;display:flex;align-items:center;justify-content:center;gap:6px;font-weight:600;font-size:calc(var(--fs) + 1px)}
+.date{flex:1 0 auto;min-width:max-content;display:flex;align-items:center;justify-content:center;gap:6px;font-weight:600;font-size:calc(var(--fs) + 1px)}
 .date .n{font-family:var(--f-num);font-variant-numeric:tabular-nums}
 .date small{color:var(--mute);font-weight:400}
 .today{font-size:10px;color:var(--accent);border:1px solid var(--accent);border-radius:9px;padding:0 6px}
@@ -174,7 +174,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 
 <div class="wrap" id="app">
   <div class="top">
-    <div class="row" style="position:relative">
+    <div class="row" style="position:relative;flex-wrap:wrap;row-gap:4px">
       <button class="ib" id="bPrev" aria-label="이전 날짜">‹</button>
       <div class="date" id="dLabel"></div>
       <button class="ib" id="bNext" aria-label="다음 날짜">›</button>
@@ -357,7 +357,7 @@ function rowHtml(x,showDate){
      <span class="cat" style="background:${col}1f;color:${col}">${esc(c)}</span>
      ${showDate?`<span class="dt">${lbl(x.date)}</span>`:''}${busy?'<span class="spin" aria-label="추천 중"></span>':(x.aiApplied?'<span class="badge">✨</span>':'')}<span class="src">${esc(x.src||'')}</span></div>
      <div class="memo">${esc(x.memo||(busy?'Claude가 보고 있어요…':(x.my?'':'메모 없음')))}${x.my?`<span style="color:var(--accent)">${x.memo?' · ':''}✎ ${esc(x.my)}</span>`:''}</div></div>
-   <button class="gb ${g?'g-'+g:''}" data-ck="${x.id}" aria-label="등급 ${g?GNM[g]:'없음'} · 누르면 바꾸기"></button></div>`;
+</div>`;
 }
 /* 썸네일: 사진 중 핵심 영역(r=[x,y,w,h] 0~1)만 칸에 꽉 차게, 비율 유지 */
 window.fitThumb=im=>{try{const r=im.dataset.r.split(',').map(Number),b=im.parentElement.getBoundingClientRect(),nw=im.naturalWidth,nh=im.naturalHeight;if(!nw||!b.width)return;
