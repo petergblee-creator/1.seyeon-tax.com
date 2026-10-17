@@ -114,6 +114,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 .list .dh{position:sticky;top:var(--sth,100px);z-index:4;background:var(--bg);box-shadow:0 2px 0 var(--line)}
 .dh{grid-column:1/-1;display:flex;justify-content:space-between;align-items:baseline;margin-top:8px;padding:2px 2px;border-bottom:1px solid var(--line);font-weight:600}
 .dh small{color:var(--mute);font-weight:400;font-family:var(--f-num)}
+.fzd{grid-column:1/-1;font-size:11px;color:var(--mute);border-top:1px dashed var(--line);padding:6px 2px 2px;margin-top:4px}
 .empty{grid-column:1/-1;border:1px dashed var(--line);border-radius:8px;padding:24px 12px;text-align:center;color:var(--mute);line-height:1.7}
 .empty button{color:var(--accent);font-weight:600}
 .hint{color:var(--mute);font-size:12px;text-align:center;margin-top:8px}
@@ -446,7 +447,18 @@ async function hashBlob(b){const d=await crypto.subtle.digest('SHA-256',await b.
 let hashRan=false;async function hashAll(){if(hashRan)return;hashRan=true;for(const x of st.items.filter(v=>(!v.h||!v.sz)&&v.aid)){try{const b=await Store.blob(x);if(!b)continue;await save(x,{h:x.h||await hashBlob(b),sz:b.size},{noLearn:true})}catch(e){}}render()}
 const hasMy=x=>!!String(x.my||'').trim();
 const mfF=a=>st.mf==='has'?a.filter(hasMy):st.mf==='none'?a.filter(x=>!hasMy(x)):a;
-function searchAll(){const q=st.q.trim().toLowerCase();if(!q)return[];return st.items.filter(x=>[x.memo,x.my,x.cat,platOf(x),tagsOf(x).map(t=>'#'+t).join(' '),normSrc(x.src),x.date,x.fname,(x.ai&&x.ai.memos||[]).join(' ')].join(' ').toLowerCase().includes(q)).sort((a,b)=>b.date.localeCompare(a.date)||(a.seq-b.seq))}
+/* 검색: 띄어쓰기·기호 무시 + 오타 1~2자 허용(한글은 자모 단위) */
+function fzN(s){return String(s||'').toLowerCase().replace(/[\s.,·・!?'"“”‘’()\[\]{}<>~\-_\/\\:;|…「」『』#@*+=]+/g,'')}
+function fzJ(s){let o='';for(const ch of s){const c=ch.charCodeAt(0)-44032;if(c>=0&&c<11172){o+=String.fromCharCode(4352+(c/588|0),4449+((c%588)/28|0));const t=c%28;if(t)o+=String.fromCharCode(4519+t)}else o+=ch}return o}
+function fzNear(q,h,max){const L=q.length;let p=[],c=[];for(let j=0;j<=L;j++)p[j]=j;if(p[L]<=max)return true;for(let i=0;i<h.length;i++){c[0]=0;const hc=h[i];for(let j=1;j<=L;j++){const a=p[j]+1,b=c[j-1]+1,d=p[j-1]+(q[j-1]===hc?0:1);c[j]=a<b?(a<d?a:d):(b<d?b:d)}if(c[L]<=max)return true;const t=p;p=c;c=t}return false}
+function fzScore(q,hay){const qs=String(q||'').trim().toLowerCase();if(!qs)return 4;const hl=String(hay||'').toLowerCase();if(hl.includes(qs))return 4;
+  const hn=fzN(hl),qn=fzN(qs);if(!qn)return 0;if(hn.includes(qn))return 3;
+  const ws=qs.split(/\s+/).map(fzN).filter(Boolean);if(ws.length>1&&ws.every(w=>hn.includes(w)))return 2;
+  const qj=fzJ(qn),L=qj.length;if(L<4)return 0;const max=L<7?1:L<12?2:3;return fzNear(qj,fzJ(hn),max)?1:0}
+const FZSRC=[fzN,fzJ,fzNear,fzScore].map(f=>f.toString()).join('\n');
+let FZHIT=new Set();
+function searchAll(){const q=st.q.trim();FZHIT=new Set();if(!q)return[];const sc=new Map();st.items.forEach(x=>{const k=fzScore(q,[x.memo,x.my,x.cat,platOf(x),tagsOf(x).map(t=>'#'+t).join(' '),normSrc(x.src),x.date,x.fname,(x.ai&&x.ai.memos||[]).join(' ')].join(' '));if(k){sc.set(x,k);if(k===1)FZHIT.add(x)}});
+  return [...sc.keys()].sort((a,b)=>((sc.get(b)>1)-(sc.get(a)>1))||b.date.localeCompare(a.date)||(a.seq-b.seq))}
 let chipAll=[],legParts={g:[],p:[],t:[],m:''};
 function fitLeg(){[['#legend','#legMore'],['#tagLeg','#tagMore']].forEach(([a,b])=>{const box=$(a),m=$(b);if(!box||!m)return;const k=[...box.children],t0=k[0]?k[0].offsetTop:0,hid=k.filter(c=>c.offsetTop>t0+4).length;m.textContent=hid?'⋯ +'+hid:'⋯'})}
 addEventListener('resize',()=>requestAnimationFrame(fitLeg));
@@ -546,7 +558,7 @@ function render(){
   if(st.mode==='bycat')return renderByCat();
   const v=visible();
   if(st.mode==='search'){{const all=searchAll(),c={};all.forEach(x=>{const k=x.cat||'미분류';c[k]=(c[k]||0)+1});const ks=Object.keys(c);if(st.qcat&&!c[st.qcat])st.qcat='';$('#qChips').hidden=ks.length<2;$('#qChips').innerHTML=`<button class="chip ${!st.qcat?'on':''}" data-qc="">전체<b>${all.length}</b></button>`+ks.sort((a,b)=>c[b]-c[a]).map(k=>`<button class="chip ${st.qcat===k?'on':''}" data-qc="${esc(k)}"><i style="background:${catColor(k)}"></i>${esc(k)}<b>${c[k]}</b></button>`).join('')}
-    L.innerHTML=st.q.trim()?(v.length?v.map(x=>rowHtml(x,true)).join(''):`<div class="empty">「${esc(st.q)}」 결과 없음</div>`):`<div class="empty">메모·분류·출처로 모든 날짜를 찾습니다</div>`;$('#hint').textContent=st.q.trim()?v.length+'건':'';return}
+    L.innerHTML=st.q.trim()?(v.length?v.map((x,i)=>(FZHIT.has(x)&&(i===0||!FZHIT.has(v[i-1]))?`<div class="fzd">≈ 비슷한 결과 (오타 허용) ${v.filter(y=>FZHIT.has(y)).length}건</div>`:'')+rowHtml(x,true)).join(''):`<div class="empty">「${esc(st.q)}」 결과 없음</div>`):`<div class="empty">메모·분류·출처로 모든 날짜를 찾습니다</div>`;$('#hint').textContent=st.q.trim()?v.length+'건':'';return}
   if(allMode()){let last='',h='';v.forEach(x=>{if(x.date!==last){last=x.date;const n=v.filter(y=>y.date===x.date).length;h+=`<div class="dh"><button data-goto="${x.date}">${lbl(x.date)} (${WD[toD(x.date).getDay()]})</button><small>${n}장</small></div>`}h+=rowHtml(x)});L.innerHTML=h||`<div class="empty">해당 사진이 없습니다</div>`;$('#hint').textContent=`전체 기간 ${v.length}장 · 날짜 줄을 누르면 그날로`;memoArrows();return}
   {const all=dayItems(st.date).length,hid=all-v.length;$('#list').dataset.hid=hid}
   L.innerHTML=(+$('#list').dataset.hid>0?`<div class="fwarn">필터(${[st.cat!=='전체'?st.cat:'',st.mf==='has'?'✎ 있음':st.mf==='none'?'✎ 없음':''].filter(Boolean).join(' · ')}) 때문에 ${$('#list').dataset.hid}장이 안 보여요<button data-unf>모두 보기</button></div>`:'')+(v.length?v.map(x=>rowHtml(x)).join(''):`<div class="empty">${lbl(st.date)}에 ${st.cat==='전체'?'':'「'+esc(st.cat)+'」 '}사진이 없습니다.<br><button data-add>＋ 사진 추가</button> · 좌우로 밀어 다른 날짜 보기</div>`);
@@ -1232,6 +1244,7 @@ small{color:#6b7280}.m{color:#2747a8}
 <div class="ch" id="cc"><span>분류</span></div><div class="ch" id="gc"><span>등급</span></div><div class="ch" id="pc"><span>출처</span></div><div class="ch" id="tc"><span>태그</span></div><div class="ch" id="mc"><span>메모</span></div>
 <div id="n"></div></div><div id="L"></div><div id="ov"><b class="x">✕</b><b class="l">‹</b><b class="r">›</b><img><div class="cap"></div></div>
 <script>
+${FZSRC}
 const D=__DATA__,E=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 let F={c:'',g:'',p:'',t:[],m:'',dup:false},asc=false,vis=[];hd.textContent=\`\${D.items.length}장 · \${D.at}\`;
 const cnt=(k,f)=>D.items.filter(f).length;
@@ -1240,7 +1253,7 @@ function chips(){const base=x=>(!F.c||x.c===F.c)&&(!F.g||x.g===F.g)&&(!F.p||x.p=
  row('cc',[...new Set(D.items.map(x=>x.c))],'c');row('gc',['A','B','C','T'],'g');row('pc',[...new Set(D.items.map(x=>x.p))],'p');
  const tags=[...new Set(D.items.flatMap(x=>x.t))];document.getElementById('tc').style.display=tags.length?'':'none';row('tc',tags,'t',null,true);
  mc.innerHTML='<span>메모</span>'+[['','전체'],['has','✎ 있음'],['none','✎ 없음']].map(([v,t])=>\`<button data-k="m" data-v="\${v}" class="\${F.m===v?'on':''}">\${t}</button>\`).join('')+(D.items.some(x=>x.dup)?\`<button data-k="dup" class="\${F.dup?'on':''}">중복만</button>\`:'')}
-function draw(){const v=q.value.trim().toLowerCase();vis=D.items.filter(x=>(!F.c||x.c===F.c)&&(!F.g||x.g===F.g)&&(!F.p||x.p===F.p)&&F.t.every(t=>x.t.includes(t))&&(!F.m||(F.m==='has')===!!x.y)&&(!F.dup||x.dup)&&(!v||x.k.includes(v)));
+function draw(){const v=q.value.trim();vis=D.items.filter(x=>(!F.c||x.c===F.c)&&(!F.g||x.g===F.g)&&(!F.p||x.p===F.p)&&F.t.every(t=>x.t.includes(t))&&(!F.m||(F.m==='has')===!!x.y)&&(!F.dup||x.dup)&&(!v||fzScore(v,x.k)));
  vis.sort((a,b)=>(asc?a.d.localeCompare(b.d):b.d.localeCompare(a.d))||a.n-b.n);let last='',h='';
  vis.forEach((x,i)=>{if(x.d!==last){last=x.d;h+=\`<div class="dh"><span>\${x.d}</span><small>\${vis.filter(y=>y.d===x.d).length}장</small></div>\`}
   h+=\`<div class="it g\${x.g}"><img loading="lazy" data-i="\${i}" src="사진/\${encodeURIComponent(x.f)}"><div><div class="h"><span class="no">\${x.n}</span><span class="g \${x.g}">\${x.g}</span><span class="c">\${E(x.c)}</span>\${x.p!=='기타'?\`<span class="p">\${E(x.p)}</span>\`:''}\${x.t.map(t=>\`<span class="t">#\${E(t)}</span>\`).join('')}\${x.dup?'<span class="dup">중복</span>':''}<small>\${E(x.s)}</small></div><div>\${E(x.m)}</div>\${x.y?\`<div class="m">✎ \${E(x.y)}</div>\`:''}</div></div>\`});
