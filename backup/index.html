@@ -428,7 +428,8 @@ const Store={ok:false,canUp:false,
 };
 const urlCache={};let catsHold=null;
 const TRASH_MS=7*864e5;let purged=false;
-function setAll(a){st.all=a;st.items=a.filter(x=>!x.del);if(!purged){purged=true;a.filter(x=>x.del&&Date.now()-x.del>TRASH_MS).forEach(x=>Store.del(x).catch(()=>{}))}}
+const PEND=new Map();
+function setAll(a){a.forEach(x=>{if(x.del&&PEND.has(x.id))PEND.delete(x.id)});st.all=a;st.items=a.filter(x=>!x.del&&!PEND.has(x.id));if(!purged){purged=true;a.filter(x=>x.del&&Date.now()-x.del>TRASH_MS).forEach(x=>Store.del(x).catch(()=>{}))}}
 let learn=[]; // 추천을 고친 내역 (추천 → 최종), 최근 30개
 let learnT;function noteLearn(x){
   if(!x.ai)return;const ai0=x.ai.memos&&x.ai.memos[0]||'';
@@ -1154,13 +1155,22 @@ function sheetTrash(){
   document.querySelectorAll('[data-rs]').forEach(b=>b.onclick=async()=>{const x=st.all.find(v=>v.id===b.dataset.rs);if(!x)return;await Store.update(x.id,{del:null});x.del=null;setAll(st.all);if(LOCAL)await Store.refresh();toast('되살림');sheetTrash()});
   document.querySelectorAll('[data-kill]').forEach(b=>{let arm=false;b.onclick=async()=>{if(!arm){arm=true;b.textContent='한 번 더';b.classList.add('arm');return}const x=st.all.find(v=>v.id===b.dataset.kill);if(!x)return;st.all=st.all.filter(v=>v!==x);setAll(st.all);await Store.del(x).catch(()=>{});if(x.orig&&x.orig!==x.aid&&Store.assets&&!LOCAL)Store.assets.delete(x.orig).catch(()=>{});toast('완전히 지움');sheetTrash()}});
 }
-function sheetDups(){const groups=Object.values(dupMap()).filter(a=>a.length>1);
+/* 여러 장 휴지통: 8장씩 동시에, 진행 표시, 실패는 한 번 더 */
+async function trashMany(L,onStep){const t=Date.now();let done=0,fail=[];L.forEach(x=>PEND.set(x.id,t));setAll(st.all);render();
+  const run=async a=>{for(let i=0;i<a.length;i+=8){const part=a.slice(i,i+8);const r=await Promise.allSettled(part.map(x=>Store.update(x.id,{del:t})));
+    r.forEach((v,k)=>{const x=part[k];if(v.status==='fulfilled'){x.del=t;done++}else fail.push(x)});onStep&&onStep(done,L.length)}};
+  await run(L);if(fail.length){const f=fail;fail=[];await new Promise(r=>setTimeout(r,800));await run(f)}
+  fail.forEach(x=>PEND.delete(x.id));setAll(st.all);if(LOCAL)await Store.refresh();render();return {ok:done,fail:fail.length}}
+function dupKeep(a){return [...a].sort((p,q)=>(hasMy(q)-hasMy(p))||(!!gOf(q)-!!gOf(p))||((p.ts||0)-(q.ts||0))||String(p.date).localeCompare(q.date))[0]}
+function sheetDups(){if(st.items.some(v=>!v.h&&v.aid)&&!hashAll.busy){hashRan=false;hashAll.busy=1;hashAll().finally(()=>{hashAll.busy=0;const h=document.querySelector('#sheetRoot .sheet h3');if(h&&h.textContent.includes('중복'))sheetDups()})}const groups=Object.values(dupMap()).filter(a=>a.length>1);
   sheet(`<h3>🔁 중복 사진 정리 <small style="color:var(--mute);font-weight:400">${groups.length}묶음 · 남길 것 하나 고르면 나머지는 휴지통(7일)</small></h3>`+(groups.length?groups.map((a,gi)=>{
-    const keep=[...a].sort((p,q)=>(hasMy(q)-hasMy(p))||(!!gOf(q)-!!gOf(p))||String(p.date).localeCompare(q.date))[0];
-    return `<div style="border-bottom:1px solid var(--line);padding:6px 0">${a.map(x=>`<div class="r" style="border:0"><div class="thw" style="--th:1.3cm"><img src="${Store.img(x)}" alt=""></div><label style="font-size:12.5px">${lbl(x.date)} ${seqOf(x)+1}번 · ${esc(x.cat||'미분류')} · ${gOf(x)||'T'}<br><small style="color:var(--mute)">${esc((x.memo||'').slice(0,30))}${x.my?' · ✎ '+esc(x.my.slice(0,20)):''}</small></label><button class="btn ${x===keep?'pri':''}" data-keep="${gi}:${x.id}">${x===keep?'이것만 남기기 ★':'이것만 남기기'}</button></div>`).join('')}</div>`}).join('')+`<div class="acts" style="margin-top:8px"><button class="btn pri" id="dAll">★ 추천대로 전부 정리</button></div><p class="hint" style="text-align:left">★ = 나의 메모·등급이 있는 쪽 우선, 같으면 먼저 올린 것.</p>`:'<p class="hint">중복 사진이 없어요 ✓ (사진 지문은 앱을 열면 뒤에서 만들어요)</p>'));
-  const keepOne=async(gi,id)=>{const a=groups[gi];for(const v of a)if(v.id!==id){await Store.update(v.id,{del:Date.now()}).catch(()=>{});v.del=Date.now()}};
-  document.querySelectorAll('[data-keep]').forEach(b=>b.onclick=async()=>{const [gi,id]=b.dataset.keep.split(':');await keepOne(+gi,id);setAll(st.all);if(LOCAL)await Store.refresh();toast('나머지는 휴지통으로');sheetDups()});
-  $('#dAll')&&($('#dAll').onclick=async()=>{for(const [gi,a] of groups.entries()){const k=[...a].sort((p,q)=>(hasMy(q)-hasMy(p))||(!!gOf(q)-!!gOf(p))||String(p.date).localeCompare(q.date))[0];await keepOne(gi,k.id)}setAll(st.all);if(LOCAL)await Store.refresh();toast(groups.length+'묶음 정리 · 휴지통 7일 보관',2500);sheetDups()})}
+    const keep=dupKeep(a);
+    return `<div style="border-bottom:1px solid var(--line);padding:6px 0">${a.map(x=>`<div class="r" style="border:0"><div class="thw" style="--th:1.3cm"><img src="${Store.img(x)}" alt=""></div><label style="font-size:12.5px">${lbl(x.date)} ${seqOf(x)+1}번 · ${esc(x.cat||'미분류')} · ${gOf(x)||'T'}<br><small style="color:var(--mute)">${esc((x.memo||'').slice(0,30))}${x.my?' · ✎ '+esc(x.my.slice(0,20)):''}</small></label><button class="btn ${x===keep?'pri':''}" data-keep="${gi}:${x.id}">${x===keep?'이것만 남기기 ★':'이것만 남기기'}</button></div>`).join('')}</div>`}).join('')+`<div class="acts" style="margin-top:8px"><button class="btn pri" id="dAll">★ 추천대로 전부 정리</button></div><p class="hint" style="text-align:left">★ = 나의 메모·등급이 있는 쪽 우선, 같으면 먼저 올린 것. 지운 것은 ⋯ → 휴지통에서 7일 안에 되살릴 수 있어요.</p>`:'<p class="hint">중복 사진이 없어요 ✓ (사진 지문은 앱을 열면 뒤에서 만들어요)</p>'));
+  let busy=false;const lock=on=>{busy=on;document.querySelectorAll('[data-keep],#dAll').forEach(b=>b.disabled=on)};
+  document.querySelectorAll('[data-keep]').forEach(b=>b.onclick=async()=>{if(busy)return;const [gi,id]=b.dataset.keep.split(':');lock(true);b.textContent='정리 중…';
+    const r=await trashMany(groups[+gi].filter(v=>v.id!==id));toast(r.fail?`${r.ok}장 휴지통 · ${r.fail}장 실패 — 다시 눌러 주세요`:'나머지는 휴지통으로',2200);lock(false);sheetDups()});
+  $('#dAll')&&($('#dAll').onclick=async e=>{if(busy)return;lock(true);const L=[];groups.forEach(a=>{const k=dupKeep(a);a.forEach(v=>{if(v!==k)L.push(v)})});
+    const r=await trashMany(L,(d,n)=>{e.target.textContent=`정리 중… ${d}/${n}`});toast(r.fail?`${r.ok}장 휴지통 · ${r.fail}장 실패 — 다시 눌러 주세요`:`${groups.length}묶음 · ${r.ok}장 휴지통 (7일 보관)`,2800);lock(false);sheetDups()})}
 async function suggestTag(x,t){const pool=st.items.filter(v=>v.id!==x.id&&!tagsOf(v).includes(t)&&(v.memo||v.my));if(!pool.length)return;
   const kw=s=>new Set(String(s||'').replace(/@[\w.]+/g,'').split(/[\s,.·:→()]+/).filter(w=>w.length>=2));const base=kw(x.memo+' '+x.my+' '+t);
   let cand=pool.map(v=>{let n=0;kw(v.memo+' '+v.my).forEach(w=>{if(base.has(w))n++});if(normSrc(v.src)&&normSrc(v.src)===normSrc(x.src))n+=2;if((v.cat||'')===(x.cat||''))n+=0.5;return [v,n]}).filter(a=>a[1]>=1).sort((a,b)=>b[1]-a[1]).slice(0,40).map(a=>a[0]);
@@ -1216,7 +1226,7 @@ function sheetTrashC(){const L=st.items.filter(x=>gOf(x)==='C');
   sheet(`<h3>🗑 C 사진 전부 휴지통으로</h3>`+(L.length?`<p style="margin:4px 0">C(봤고 끝) <b>${L.length}장</b> · 휴지통에 7일 보관 후 사라짐 · 그 안에 되살리기 가능</p><div class="acts"><button class="btn" id="cBak">💾 먼저 백업</button><span style="flex:1"></span><button class="btn del" id="cGo">${L.length}장 휴지통으로</button></div>`:'<p class="hint">C 사진이 없어요</p>'));
   $('#cBak')&&($('#cBak').onclick=()=>sheetExport());
   let arm=false;$('#cGo')&&($('#cGo').onclick=async e=>{if(!arm){arm=true;e.target.classList.add('arm');e.target.textContent='한 번 더 누르면 실행';return}
-    e.target.textContent='옮기는 중…';const t=Date.now();for(const x of L){await Store.update(x.id,{del:t}).catch(()=>{});x.del=t}setAll(st.all);if(LOCAL)await Store.refresh();toast(L.length+'장 휴지통으로 · ⋯ → 휴지통에서 되살리기',3000);closeSheet()})}
+    e.target.textContent='옮기는 중…';const r=await trashMany(L,(d,n)=>{e.target.textContent=`옮기는 중… ${d}/${n}`});toast(r.fail?`${r.ok}장 휴지통 · ${r.fail}장 실패 — 다시 해 주세요`:r.ok+'장 휴지통으로 · ⋯ → 휴지통에서 되살리기',3000);closeSheet()})}
 function playFrom(id){const v=visible(),i=v.findIndex(x=>x.id===id);if(i<0)return;if(!LS.get('seqTip',0)){LS.set('seqTip',1);toast('번호 누름 = 여기부터 듣기 · 길게 = 순번 바꾸기',2600)}if(ttsOn&&ttsList===v||ttsOn&&ttsList.length===v.length&&ttsList.every((x,k)=>x===v[k])){ttsI=i+1;ttsGo(0);return}ttsPlay(v,i)}
 function sheetSeq(id){const x=st.items.find(v=>v.id===id);if(!x)return;const a=dayItems(x.date),n=a.indexOf(x)+1;
   sheet(`<h3>순번 바꾸기 <small style="color:var(--mute);font-weight:400">${lbl(x.date)} · 지금 ${n}번 / ${a.length}장</small></h3>
