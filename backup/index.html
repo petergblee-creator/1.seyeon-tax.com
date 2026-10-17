@@ -867,7 +867,11 @@ async function thumbAll(){
       const th=r&&okThumb(r.thumb);if(th){await save(x,{thumb:th},{noLearn:true});n++;render()}}catch(e){}}
   toast(`썸네일 ${n}장 맞춤`);
 }
-async function aiAll(){const t=st.items.filter(x=>(!x.cat||x.cat==='미분류')&&!x.memo);if(!t.length)return toast('추천할 미분류 사진이 없습니다');toast(`${t.length}장 추천 시작`);for(const x of t)await recommend(x,{apply:true})}
+async function aiAll(){const t=st.items.filter(x=>(!x.cat||x.cat==='미분류')&&!x.memo);if(!t.length)return toast('추천할 미분류 사진이 없습니다');aiProg(0,t.length);for(const [i,x] of t.entries()){if(!x.del)await recommend(x,{apply:true});aiProg(i+1,t.length)}}
+/* AI 메모 진행: 남은 장수·예상 시간 */
+let aiP0=0;function aiProg(i,n){let el=$('#aiProg');if(!el){el=document.createElement('div');el.id='aiProg';el.style.cssText='position:fixed;left:50%;transform:translateX(-50%);bottom:calc(10px + env(safe-area-inset-bottom,0px));z-index:58;background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:999px;padding:4px 12px;font-size:12px;box-shadow:0 3px 12px rgba(0,0,0,.18);white-space:nowrap;pointer-events:none';document.body.appendChild(el)}
+  if(i===0)aiP0=Date.now();if(i>=n){el.textContent=`✨ AI 메모 다 붙음 ${n}장 ✓`;setTimeout(()=>el.remove(),2500);return}
+  const per=i?(Date.now()-aiP0)/i:6000,left=Math.round(per*(n-i)/1000);el.textContent=`✨ AI 메모 ${i}/${n} · 남은 ${n-i}장 · 약 ${left<60?Math.max(1,left)+'초':Math.round(left/60)+'분'}`}
 
 /* ───── 집중 보기 ───── */
 let viewList=[],fillOn=false,catOn=false;
@@ -1116,20 +1120,23 @@ $('#fIn').onchange=async e=>{
   let skipCrop=!LS.get('cropOnAdd',true);
   let wl=null;try{wl=await navigator.wakeLock?.request('screen')}catch(e){}
   upBusy=fs.length;
+  const skipped=[];
   for(const [k,f] of fs.entries()){
     let src=f,cr='keep';
+    let b0,h='';try{b0=await shrink(f);h=await hashBlob(b0).catch(()=>'')}catch(e){b0=f}
+    {const twin=h&&st.items.find(v=>v.h===h);if(twin){skipped.push(twin);toast(`이미 있어요 — ${lbl(twin.date)} ${seqOf(twin)+1}번 · 건너뜀 (${k+1}/${fs.length})`,2500);continue}}
     if(!skipCrop){cr=await cropUI(f,{multi:fs.length-k>1});if(cr===null){toast('여기서 멈춤');break}if(cr==='all'){skipCrop=true;cr='keep'}}
     toast(`올리는 중 ${k+1}/${fs.length} · 다 될 때까지 이 화면에 있어 주세요`,4000);
-    try{const b0=await shrink(f),b=cr instanceof Blob?cr:b0;const oid=cr instanceof Blob?await Store.upload(b0):'';const h=await hashBlob(b0).catch(()=>'');const twin=h&&st.items.find(v=>v.h===h);if(twin)toast(`이미 있는 사진이에요 (${lbl(twin.date)} ${seqOf(twin)+1}번) — 「중복」으로 표시`,3500);const aid=await Store.upload(b);seq++;
+    try{const b=cr instanceof Blob?cr:b0;const oid=cr instanceof Blob?await Store.upload(b0):'';const aid=await Store.upload(b);seq++;
       const doc={h,sz:b.size,aid,...(oid?{orig:oid}:{}),date,seq,cat,memo:'',my:'',src:'',g:'',done:false,ts:Date.now(),fname:f.name||''};
       const id=await Store.add(doc);const x={id,...doc};st.items.push(x);added.push([x,b])}
     catch(err){toast('업로드 실패: '+(err.message||err.code))}}
   upBusy=0;try{wl&&wl.release()}catch(e){}
-  if(added.length)toast(`${added.length}/${fs.length}장 올림 ✓`,2500);
+  if(added.length||skipped.length)toast(`${added.length}장 올림 ✓`+(skipped.length?` · 이미 있어 건너뜀 ${skipped.length}장`:''),3500);
   st.date=date;st.mode='day';if(LOCAL)await Store.refresh();render();
   if(!added.length)return;
   openView(added[0][0].id);
-  if(S.autoAi){for(const [x,b] of added){const cur=st.items.find(v=>v.id===x.id)||x;await recommend(cur,{apply:true,blob:b})}}
+  if(S.autoAi){aiProg(0,added.length);for(const [i,[x,b]] of added.entries()){const cur=st.items.find(v=>v.id===x.id)||x;if(!cur.del)await recommend(cur,{apply:true,blob:b});aiProg(i+1,added.length)}}
   else toast('분류와 메모를 정해 주세요');
 };
 
